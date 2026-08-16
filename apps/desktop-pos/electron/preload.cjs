@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startShift: (cashierName, openingBalance) => ipcRenderer.invoke('db:start-shift', cashierName, openingBalance),
   endShift: (shiftId, actualDrawerCash) => ipcRenderer.invoke('db:end-shift', shiftId, actualDrawerCash),
   pushPaymentTerminal: (amount, orderNumber, terminalIp) => ipcRenderer.invoke('payment:push-terminal', amount, orderNumber, terminalIp),
-  checkLicense: () => ipcRenderer.invoke('license:check'),
-  activateLicense: (licenseKey) => ipcRenderer.invoke('license:activate', licenseKey)
+  checkLicense: () => ipcRenderer.invoke('license:check-status'),
+  activateLicense: (licenseKey) => ipcRenderer.invoke('license:activate', licenseKey),
+  onUpdaterAvailable: (callback) => ipcRenderer.on('updater:available', (event, info) => callback(info)),
+  onUpdaterProgress: (callback) => ipcRenderer.on('updater:progress', (event, percent) => callback(percent)),
+  onUpdaterDownloaded: (callback) => ipcRenderer.on('updater:downloaded', (event, info) => callback(info)),
+  quitAndInstallUpdate: () => ipcRenderer.invoke('updater:quit-and-install')
 });

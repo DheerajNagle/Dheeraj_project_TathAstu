@@ -107,6 +107,20 @@ async function runTest() {
     throw new Error('Print queue insertion failed!');
   }
 
+  // 9. Verify Licensing Lock Check & Save
+  console.log('\n--- Verifying Device License Key Locks ---');
+  const dummyHw = 'MOCK-HWID-HEX-DUMMY-829312';
+  const dummyKey = 'TATHASTU-PRO-INSTALL-101';
+  db.saveLicense(dummyKey, dummyHw);
+  const activeLicense = db.getLicense();
+  console.log(`  * Registered License Key: ${activeLicense.license_key}`);
+  console.log(`  * Registered Hardware ID: ${activeLicense.hardware_id}`);
+  if (activeLicense.license_key === dummyKey && activeLicense.hardware_id === dummyHw) {
+    console.log('  * Device lock licensing check verified.');
+  } else {
+    throw new Error('Device licensing check failed!');
+  }
+
   console.log('\n--- Test Completed Successfully ---');
 }
 

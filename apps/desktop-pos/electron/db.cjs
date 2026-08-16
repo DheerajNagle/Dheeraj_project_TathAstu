@@ -28,10 +28,10 @@ db.pragma('foreign_keys = ON');
 
 // Initialize schema
 function initSchema() {
-  // Migration check: check if 'license_info' table exists in SQLite
+  // Migration check: check if 'license_metadata' table exists in SQLite
   let needsMigration = false;
   try {
-    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='license_info'").get();
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='license_metadata'").get();
     if (!tableExists) {
       needsMigration = true;
     }
@@ -54,7 +54,7 @@ function initSchema() {
       DROP TABLE IF EXISTS shifts;
       DROP TABLE IF EXISTS pos_sequence;
       DROP TABLE IF EXISTS print_retry_queue;
-      DROP TABLE IF EXISTS license_info;
+      DROP TABLE IF EXISTS license_metadata;
     `);
   }
 
@@ -197,11 +197,10 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_shifts_status ON shifts(status);
     CREATE INDEX IF NOT EXISTS idx_recipes_item_id ON recipes(item_id);
 
-    -- 14. Desktop POS Licensing Locks
-    CREATE TABLE IF NOT EXISTS license_info (
-      license_key TEXT NOT NULL,
-      activated_at TEXT NOT NULL,
-      hardware_id TEXT NOT NULL
+    -- 14. Desktop POS Licensing Locks (Encrypted Metadata Store)
+    CREATE TABLE IF NOT EXISTS license_metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
     );
   `);
 
@@ -517,14 +516,24 @@ function clearPrintJob(id) {
   db.prepare("DELETE FROM print_retry_queue WHERE id = ?").run(id);
 }
 
-function saveLicense(licenseKey, hardwareId) {
-  db.prepare("DELETE FROM license_info").run();
-  db.prepare("INSERT INTO license_info (license_key, activated_at, hardware_id) VALUES (?, ?, ?)")
-    .run(licenseKey, new Date().toISOString(), hardwareId);
+function saveLicenseKey(key) {
+  db.prepare("INSERT OR REPLACE INTO license_metadata (key, value) VALUES ('license_key', ?)")
+    .run(key);
 }
 
-function getLicense() {
-  return db.prepare("SELECT * FROM license_info LIMIT 1").get();
+function getLicenseKey() {
+  const row = db.prepare("SELECT value FROM license_metadata WHERE key = 'license_key'").get();
+  return row ? row.value : null;
+}
+
+function saveLicenseToken(token) {
+  db.prepare("INSERT OR REPLACE INTO license_metadata (key, value) VALUES ('license_token', ?)")
+    .run(token);
+}
+
+function getLicenseToken() {
+  const row = db.prepare("SELECT value FROM license_metadata WHERE key = 'license_token'").get();
+  return row ? row.value : null;
 }
 
 module.exports = {
@@ -545,6 +554,8 @@ module.exports = {
   addPrintJob,
   getPendingPrintJobs,
   clearPrintJob,
-  saveLicense,
-  getLicense
+  saveLicenseKey,
+  getLicenseKey,
+  saveLicenseToken,
+  getLicenseToken
 };

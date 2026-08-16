@@ -16,6 +16,8 @@
   "dependencies": {
     "@tathastu/shared-types": "*",
     "better-sqlite3": "^9.4.3",
+    "electron-updater": "^6.1.7",
+    "node-machine-id": "^1.1.12",
     "node-thermal-printer": "^4.6.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

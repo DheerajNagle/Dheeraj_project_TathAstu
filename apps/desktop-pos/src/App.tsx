@@ -95,6 +95,12 @@ interface ElectronAPI {
   startShift: (cashierName: string, openingBalance: number) => Promise<SQLiteShift>;
   endShift: (shiftId: string, actualDrawerCash: number) => Promise<{ shift: SQLiteShift; reportText: string }>;
   pushPaymentTerminal: (amount: number, orderNumber: string, terminalIp: string) => Promise<{ success: boolean; referenceId: string; msg: string }>;
+  checkLicense: () => Promise<{ success: boolean; hardwareId: string; licenseKey?: string; msg?: string }>;
+  activateLicense: (licenseKey: string) => Promise<{ success: boolean; msg: string }>;
+  onUpdaterAvailable: (callback: (info: any) => void) => void;
+  onUpdaterProgress: (callback: (percent: number) => void) => void;
+  onUpdaterDownloaded: (callback: (info: any) => void) => void;
+  quitAndInstallUpdate: () => Promise<void>;
 }
 
 declare global {
@@ -137,6 +143,21 @@ function App() {
   const [terminalIp, setTerminalIp] = useState<string>('');
   const [isPushingEDC, setIsPushingEDC] = useState<boolean>(false);
   const [edcProgressMsg, setEdcProgressMsg] = useState<string>('');
+
+  // Licensing States
+  const [isLicensed, setIsLicensed] = useState<boolean>(true);
+  const [licenseChecking, setLicenseChecking] = useState<boolean>(true);
+  const [hwId, setHwId] = useState<string>('');
+  const [licenseKeyInput, setLicenseKeyInput] = useState<string>('');
+  const [activationError, setActivationError] = useState<string>('');
+  const [isActivating, setIsActivating] = useState<boolean>(false);
+
+  // Auto-Updater States
+  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
+  const [updateProgress, setUpdateProgress] = useState<number>(0);
+  const [updateDownloaded, setUpdateDownloaded] = useState<boolean>(false);
+  const [updateInfo, setUpdateInfo] = useState<any>(null);
+
 
   // Modifiers
   const [modifierItem, setModifierItem] = useState<SQLiteItem | null>(null);
@@ -186,9 +207,62 @@ function App() {
     }
   };
 
+  const checkLicenseLock = async () => {
+    try {
+      const res = await window.electronAPI.checkLicense();
+      setHwId(res.hardwareId);
+      if (res.success) {
+        setIsLicensed(true);
+      } else {
+        setIsLicensed(false);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLicenseChecking(false);
+    }
+  };
+
   useEffect(() => {
+    checkLicenseLock();
     refreshData();
+
+    const api = window.electronAPI;
+    if (api && api.onUpdaterAvailable) {
+      api.onUpdaterAvailable((info: any) => {
+        setUpdateInfo(info);
+        setUpdateAvailable(true);
+      });
+      api.onUpdaterProgress((percent: number) => {
+        setUpdateProgress(Math.round(percent));
+      });
+      api.onUpdaterDownloaded(() => {
+        setUpdateDownloaded(true);
+      });
+    }
   }, []);
+
+  const handleActivateLicense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!licenseKeyInput.trim()) return;
+    
+    setIsActivating(true);
+    setActivationError('');
+    try {
+      const res = await window.electronAPI.activateLicense(licenseKeyInput.trim());
+      if (res.success) {
+        setIsLicensed(true);
+        alert('Software successfully licensed and unlocked!');
+        await refreshData();
+      } else {
+        setActivationError(res.msg || 'Activation failed.');
+      }
+    } catch (err) {
+      setActivationError('Connection error to activation servers.');
+    } finally {
+      setIsActivating(false);
+    }
+  };
 
   // Connect to Socket.io for KDS and live connection status updates
   useEffect(() => {
@@ -510,6 +584,71 @@ function App() {
     return matchesCategory && matchesSearch;
   });
 
+  if (licenseChecking) {
+    return (
+      <div className="h-screen w-screen bg-gray-950 flex flex-col items-center justify-center text-white">
+        <div className="w-10 h-10 rounded-full border-4 border-orange-500 border-t-transparent animate-spin"></div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mt-4">Verifying system license...</p>
+      </div>
+    );
+  }
+
+  if (!isLicensed) {
+    return (
+      <div className="h-screen w-screen bg-gray-950 flex items-center justify-center text-white p-6 relative overflow-hidden select-none">
+        <div className="absolute -top-40 -left-40 w-96 h-96 bg-orange-600/10 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-red-600/10 rounded-full blur-3xl"></div>
+
+        <div className="bg-gray-900/40 border border-gray-800/80 backdrop-blur-xl p-10 rounded-3xl w-full max-w-md text-center shadow-2xl relative z-10 space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-orange-600 to-orange-400 flex items-center justify-center font-black text-3xl shadow-lg shadow-orange-500/20 text-white mx-auto">
+            T
+          </div>
+          <div>
+            <h2 className="text-xl font-black tracking-tight text-white uppercase">Activation Required</h2>
+            <p className="text-[11px] text-gray-400 font-semibold leading-relaxed mt-1">
+              This TathAstu POS workstation installation is locked. Please enter your License Activation Key to register this device.
+            </p>
+          </div>
+
+          <div className="bg-gray-950/80 p-4 rounded-xl border border-gray-800/50 font-mono text-left">
+            <span className="text-[9px] font-black text-gray-500 block uppercase tracking-wider">Device Hardware Fingerprint</span>
+            <span className="text-xs font-bold text-orange-400 break-all select-all block mt-0.5">{hwId}</span>
+          </div>
+
+          <form onSubmit={handleActivateLicense} className="space-y-4">
+            <div className="text-left">
+              <label className="text-[10px] font-black text-gray-500 uppercase tracking-wider block">License Activation Key</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. TATHASTU-PRO-INSTALL-101"
+                value={licenseKeyInput}
+                onChange={e => setLicenseKeyInput(e.target.value)}
+                className="w-full mt-1.5 px-4 py-3 bg-gray-950 border border-gray-800 rounded-xl text-xs font-bold tracking-widest text-center text-white focus:outline-none focus:border-orange-500 uppercase transition-all"
+              />
+            </div>
+
+            {activationError && (
+              <p className="text-[10px] text-red-500 font-bold bg-red-950/30 border border-red-900/50 p-2.5 rounded-lg animate-pulse">
+                ⚠ {activationError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={isActivating}
+              className="w-full py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-800 text-white text-xs font-black uppercase rounded-xl transition-all shadow-lg shadow-orange-500/10"
+            >
+              {isActivating ? 'Registering Device...' : 'Activate Installation'}
+            </button>
+          </form>
+          
+          <p className="text-[9px] text-gray-500 font-bold">TathAstu REST POS System. All rights reserved.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 font-sans overflow-hidden">
       {/* Sidebar Navigation */}
@@ -619,6 +758,33 @@ function App() {
             )}
           </div>
         </header>
+
+        {/* Auto-Updater Notification Banner */}
+        {updateAvailable && (
+          <div className="bg-gradient-to-r from-orange-600 to-red-650 text-white px-8 py-3 flex items-center justify-between shadow-md shrink-0 relative z-25">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">🚀</span>
+              <div className="text-xs font-bold leading-normal">
+                {updateDownloaded ? (
+                  <span>A new software update is ready! Please restart the POS to apply.</span>
+                ) : (
+                  <span>
+                    Downloading update v{updateInfo?.version || 'new'} in background... 
+                    <span className="ml-1 text-orange-200 font-extrabold">({updateProgress}%)</span>
+                  </span>
+                )}
+              </div>
+            </div>
+            {updateDownloaded && (
+              <button
+                onClick={() => window.electronAPI.quitAndInstallUpdate()}
+                className="px-4 py-1.5 bg-white text-orange-700 hover:bg-orange-50 font-black text-[10px] rounded-lg shadow-sm transition-all"
+              >
+                Install & Restart POS
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Tab view contents */}
         <div className="flex-1 flex overflow-hidden">
