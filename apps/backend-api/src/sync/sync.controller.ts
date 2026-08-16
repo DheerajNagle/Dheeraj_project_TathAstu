@@ -18,4 +18,14 @@ export class SyncController {
   async pullCatalog() {
     return this.syncService.pullCatalog();
   }
+
+  @Post('webhook/swiggy')
+  async swiggyWebhook(@Body() payload: any) {
+    return this.syncService.processSwiggyWebhook(payload);
+  }
+
+  @Post('webhook/zomato')
+  async zomatoWebhook(@Body() payload: any) {
+    return this.syncService.processZomatoWebhook(payload);
+  }
 }

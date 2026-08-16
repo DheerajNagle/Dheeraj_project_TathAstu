@@ -31,7 +31,7 @@ interface SQLiteItem {
 }
 
 interface CartItem {
-  id: string; // unique customization ID
+  id: string;
   menuItemId: string;
   name: string;
   price: number;
@@ -93,6 +93,7 @@ interface ElectronAPI {
   getActiveShift: () => Promise<SQLiteShift | null>;
   startShift: (cashierName: string, openingBalance: number) => Promise<SQLiteShift>;
   endShift: (shiftId: string, actualDrawerCash: number) => Promise<{ shift: SQLiteShift; reportText: string }>;
+  pushPaymentTerminal: (amount: number, orderNumber: string, terminalIp: string) => Promise<{ success: boolean; referenceId: string; msg: string }>;
 }
 
 declare global {
@@ -130,6 +131,11 @@ function App() {
   const [actualCashDrawer, setActualCashDrawer] = useState<number>(0);
   const [zReportText, setZReportText] = useState<string>('');
   const [showZReportModal, setShowZReportModal] = useState<boolean>(false);
+
+  // EDC Payment Card Reader configurations
+  const [terminalIp, setTerminalIp] = useState<string>('');
+  const [isPushingEDC, setIsPushingEDC] = useState<boolean>(false);
+  const [edcProgressMsg, setEdcProgressMsg] = useState<string>('');
 
   // Modifiers
   const [modifierItem, setModifierItem] = useState<SQLiteItem | null>(null);
@@ -219,7 +225,6 @@ function App() {
   // Keyboard shortcut listener (F1 - F12)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent browser default bindings (like F5 reload, F12 inspector)
       if (['F1', 'F2', 'F3', 'F4', 'F5', 'F8', 'F9', 'F10', 'F12'].includes(e.key)) {
         e.preventDefault();
       }
@@ -238,7 +243,7 @@ function App() {
           codeSearchRef.current?.focus();
           break;
         case 'F5':
-          setSelectedTable(''); // toggle takeaway
+          setSelectedTable('');
           break;
         case 'F8':
           handleCheckout('CASH');
@@ -349,18 +354,49 @@ function App() {
     return `ORD-${today}-${serial}`;
   };
 
-  const handleCheckout = async (paymentMethod: 'CASH' | 'UPI' | 'CARD') => {
+  // Push payment intent to local EDC card reader terminal
+  const handleEDCPush = async () => {
     if (cart.length === 0) return;
-
-    // Shift check: block sales if shift is not started
     if (!activeShift) {
       alert('Error: Please start a cashier shift in the Business tab before billing orders.');
       setActiveTab('business');
       return;
     }
 
-    const orderId = generateCompositeOrderId();
     const orderNumber = generateOrderNumber();
+    setIsPushingEDC(true);
+    setEdcProgressMsg('Sending transaction parameters to terminal reader...');
+
+    try {
+      const res = await window.electronAPI.pushPaymentTerminal(cartTotal, orderNumber, terminalIp);
+      if (res.success) {
+        setEdcProgressMsg('Authorization approved! Saving transaction to database...');
+        await new Promise(resolve => setTimeout(resolve, 800));
+        await executeFinalCheckout('CARD', orderNumber);
+      } else {
+        alert(`Payment declined: ${res.msg || 'Transaction rejected by card machine.'}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Payment Terminal interface communication failure.');
+    } finally {
+      setIsPushingEDC(false);
+    }
+  };
+
+  const handleCheckout = async (paymentMethod: 'CASH' | 'UPI' | 'CARD') => {
+    if (cart.length === 0) return;
+    if (!activeShift) {
+      alert('Error: Please start a cashier shift in the Business tab before billing orders.');
+      setActiveTab('business');
+      return;
+    }
+    const orderNumber = generateOrderNumber();
+    await executeFinalCheckout(paymentMethod, orderNumber);
+  };
+
+  const executeFinalCheckout = async (paymentMethod: 'CASH' | 'UPI' | 'CARD', orderNumber: string) => {
+    const orderId = generateCompositeOrderId();
     const nowStr = new Date().toISOString();
 
     const orderPayload = {
@@ -391,7 +427,7 @@ function App() {
     };
 
     try {
-      // 1. Save order to local SQLite (updates shifts totals and deducts stock)
+      // 1. Save order to local SQLite
       await window.electronAPI.saveOrder(orderPayload);
 
       // 2. Trigger silent prints (print KOT and customer bill receipt)
@@ -480,7 +516,7 @@ function App() {
     setKdsTickets(prev => prev.filter(t => t.id !== id));
   };
 
-  // Filter items by search bar query and category grid
+  // Filter items
   const filteredItems = items.filter(item => {
     const matchesCategory = selectedCategory === 'all' || item.category_id === selectedCategory;
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -607,7 +643,6 @@ function App() {
             <>
               {/* Menu and Search panel */}
               <div className="flex-1 flex flex-col p-6 overflow-hidden">
-                {/* Search bars and filters */}
                 <div className="flex gap-4 shrink-0 mb-6">
                   {/* Item code search */}
                   <form onSubmit={handleCodeSearchSubmit} className="w-64">
@@ -843,11 +878,20 @@ function App() {
                       <button
                         onClick={() => handleCheckout('CARD')}
                         disabled={cart.length === 0}
-                        className="py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-200 text-white rounded-xl text-[10px] font-black uppercase transition-colors"
+                        className="py-2.5 bg-gray-500 hover:bg-gray-650 disabled:bg-gray-200 text-white rounded-xl text-[10px] font-black uppercase transition-colors"
                       >
                         💳 Card [F10]
                       </button>
                     </div>
+                    
+                    {/* EDC push card machine */}
+                    <button
+                      onClick={handleEDCPush}
+                      disabled={cart.length === 0}
+                      className="w-full py-2.5 bg-purple-600 hover:bg-purple-705 disabled:bg-gray-200 text-white rounded-xl text-[10px] font-black uppercase transition-all shadow-md shadow-purple-500/10"
+                    >
+                      📲 Send to EDC Card Machine
+                    </button>
                   </div>
                 </div>
               </div>
@@ -863,7 +907,7 @@ function App() {
                 selectedTableNumber={selectedTable}
                 onSelectTable={tableNumber => {
                   setSelectedTable(tableNumber);
-                  setActiveTab('pos'); // Jump back to pos to choose items
+                  setActiveTab('pos');
                 }}
               />
             </div>
@@ -937,7 +981,7 @@ function App() {
             </div>
           )}
 
-          {/* 4. Business Tab (Cashier Shifts & BOM Recipe Inventory) */}
+          {/* 4. Business Tab */}
           {activeTab === 'business' && (
             <div className="flex-1 p-8 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
               
@@ -949,7 +993,6 @@ function App() {
                 </div>
 
                 {!activeShift ? (
-                  /* Shift opening view */
                   <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">🔒</span>
@@ -987,7 +1030,6 @@ function App() {
                     </form>
                   </div>
                 ) : (
-                  /* Active Shift dashboard & closing audit form */
                   <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col justify-between">
                     <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                       <div>
@@ -1003,7 +1045,6 @@ function App() {
                     </div>
 
                     <div className="p-6 space-y-4">
-                      {/* Split cash summary */}
                       <div className="grid grid-cols-2 gap-4 text-xs font-bold">
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 uppercase block">Opening Cash Float</span>
@@ -1023,7 +1064,6 @@ function App() {
                         </div>
                       </div>
 
-                      {/* Expected drawer cash */}
                       <div className="border-t border-dashed border-gray-200 pt-4 flex justify-between items-center">
                         <div>
                           <span className="text-[10px] text-gray-400 font-bold uppercase block">Expected Drawer Cash</span>
@@ -1034,7 +1074,6 @@ function App() {
                         </span>
                       </div>
 
-                      {/* Drawer close audit form */}
                       <form onSubmit={handleEndShiftSubmit} className="pt-4 border-t border-gray-100 space-y-4">
                         <div>
                           <label className="text-[10px] font-bold text-gray-400 uppercase block">Actual Drawer Cash Counted</label>
@@ -1262,6 +1301,19 @@ function App() {
                 />
               </div>
             )}
+
+            {/* EDC Card terminal IP setup */}
+            <div className="pt-4 border-t border-gray-100">
+              <label className="text-[10px] font-bold text-gray-400 uppercase">EDC Card Machine IP</label>
+              <input
+                type="text"
+                value={terminalIp}
+                onChange={e => setTerminalIp(e.target.value)}
+                placeholder="e.g. 192.168.1.150 (Empty for Mock)"
+                className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+              />
+              <span className="text-[9px] text-gray-400 font-semibold block mt-1">Leaves empty to run card payment terminal simulator.</span>
+            </div>
           </div>
           
           <div className="pt-6 border-t border-gray-100 text-xs text-gray-400 space-y-1">
@@ -1372,6 +1424,30 @@ function App() {
                 Dismiss & Open Drawer
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDC PUSH FULL-SCREEN OVERLAY DIALOG SPINNER */}
+      {isPushingEDC && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/85 backdrop-blur-md text-white p-6">
+          <div className="bg-gray-900 border border-gray-800 p-8 rounded-3xl w-full max-w-md text-center space-y-6 shadow-2xl relative overflow-hidden">
+            <div className="absolute -top-10 -left-10 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl"></div>
+            <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl"></div>
+            
+            <div className="w-16 h-16 rounded-full border-4 border-purple-500 border-t-transparent animate-spin mx-auto"></div>
+            
+            <h3 className="text-lg font-black tracking-tight text-white uppercase">EDC Terminal Push</h3>
+            <p className="text-xs text-gray-400 font-semibold leading-relaxed">
+              Sending <span className="text-purple-400 font-extrabold text-sm">₹{cartTotal.toFixed(2)}</span> to card reader terminal <br/>
+              <span className="text-[10px] text-gray-500">({terminalIp ? `IP: ${terminalIp}` : 'Mock Simulator Mode'})</span>
+            </p>
+            
+            <div className="bg-gray-950 p-4 rounded-xl border border-gray-800 font-mono text-[10px] text-purple-400 uppercase tracking-widest animate-pulse">
+              {edcProgressMsg}
+            </div>
+            
+            <p className="text-[10px] text-gray-500">Please tap, swipe or insert card on the reader device.</p>
           </div>
         </div>
       )}

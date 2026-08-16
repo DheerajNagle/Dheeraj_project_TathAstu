@@ -25,5 +25,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getIngredients: () => ipcRenderer.invoke('db:get-ingredients'),
   getActiveShift: () => ipcRenderer.invoke('db:get-active-shift'),
   startShift: (cashierName, openingBalance) => ipcRenderer.invoke('db:start-shift', cashierName, openingBalance),
-  endShift: (shiftId, actualDrawerCash) => ipcRenderer.invoke('db:end-shift', shiftId, actualDrawerCash)
+  endShift: (shiftId, actualDrawerCash) => ipcRenderer.invoke('db:end-shift', shiftId, actualDrawerCash),
+  pushPaymentTerminal: (amount, orderNumber, terminalIp) => ipcRenderer.invoke('payment:push-terminal', amount, orderNumber, terminalIp)
 });

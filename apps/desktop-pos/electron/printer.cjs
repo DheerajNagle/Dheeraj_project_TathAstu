@@ -28,7 +28,7 @@ function generateUPIUri(orderNumber, totalAmount) {
   const payeeVPA = 'tathastopos@okaxis';
   const payeeName = 'TathAstu Restaurant';
   const encodedName = encodeURIComponent(payeeName);
-  return `upi://pay?pa=${payeeVPA}&pn=${encodedName}&am=${totalAmount.toFixed(2)}&cu=INR&tn=${orderNumber}`;
+  return `upi://pay?pa=${payeeVPA}&pn=${encodedName}&am=${totalAmount.toFixed(2)}&cu=INR&tn=${orderNumber}&tr=${orderNumber}`;
 }
 
 // --- Printing Handlers ---

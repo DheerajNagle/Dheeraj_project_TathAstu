@@ -151,4 +151,136 @@ export class SyncService implements OnModuleInit {
       };
     }
   }
+
+  async processSwiggyWebhook(payload: any) {
+    const orderNumber = payload.orderId || `SW-${Date.now().toString().slice(-6)}`;
+    const subtotal = (payload.cart || []).reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+    const discount = payload.discount || 0;
+    const tax = Math.max(0, subtotal - discount) * 0.05;
+    const total = subtotal - discount + tax;
+
+    const orderData = {
+      id: `OUT01-SWIGGY-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      order_number: orderNumber,
+      tableNumber: null,
+      customerName: payload.customer?.name || 'Swiggy Guest',
+      customerPhone: payload.customer?.phone || null,
+      status: 'PENDING',
+      source: 'DELIVERY',
+      subTotal: subtotal,
+      tax,
+      discount,
+      total,
+      paymentStatus: 'PAID',
+      paymentMethod: 'UPI',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: (payload.cart || []).map((item: any) => ({
+        id: `SW-ITEM-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        menuItemId: item.itemId,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        notes: item.notes || null,
+        kotId: null
+      }))
+    };
+
+    return this.saveAndBroadcastWebhookOrder(orderData);
+  }
+
+  async processZomatoWebhook(payload: any) {
+    const orderNumber = payload.order_id || `ZM-${Date.now().toString().slice(-6)}`;
+    const subtotal = (payload.items || []).reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+    const discount = payload.discount_amount || 0;
+    const tax = Math.max(0, subtotal - discount) * 0.05;
+    const total = subtotal - discount + tax;
+
+    const orderData = {
+      id: `OUT01-ZOMATO-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      order_number: orderNumber,
+      tableNumber: null,
+      customerName: payload.customer_details?.customer_name || 'Zomato Guest',
+      customerPhone: payload.customer_details?.customer_phone || null,
+      status: 'PENDING',
+      source: 'DELIVERY',
+      subTotal: subtotal,
+      tax,
+      discount,
+      total,
+      paymentStatus: 'PAID',
+      paymentMethod: 'UPI',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: (payload.items || []).map((item: any) => ({
+        id: `ZM-ITEM-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        menuItemId: item.item_id,
+        name: item.item_name,
+        price: item.price,
+        quantity: item.quantity,
+        notes: item.instructions || null,
+        kotId: null
+      }))
+    };
+
+    return this.saveAndBroadcastWebhookOrder(orderData);
+  }
+
+  private async saveAndBroadcastWebhookOrder(orderData: any) {
+    const savedOrder = await this.prisma.order.create({
+      data: {
+        id: orderData.id,
+        orderNumber: orderData.order_number,
+        tableNumber: orderData.tableNumber,
+        customerName: orderData.customerName,
+        customerPhone: orderData.customerPhone,
+        status: orderData.status,
+        source: orderData.source,
+        subTotal: orderData.subTotal,
+        tax: orderData.tax,
+        discount: orderData.discount,
+        total: orderData.total,
+        paymentStatus: orderData.paymentStatus,
+        paymentMethod: orderData.paymentMethod,
+        createdAt: orderData.createdAt,
+        updatedAt: orderData.updatedAt,
+        items: {
+          create: orderData.items.map((i: any) => ({
+            id: i.id,
+            menuItemId: i.menuItemId,
+            name: i.name,
+            price: i.price,
+            quantity: i.quantity,
+            notes: i.notes,
+            kotId: i.kotId
+          }))
+        }
+      },
+      include: {
+        items: true
+      }
+    });
+
+    console.log(`[Webhook Engine] Saved aggregator order ${savedOrder.orderNumber} to PostgreSQL.`);
+
+    this.syncGateway.broadcastKOT({
+      id: savedOrder.id,
+      orderNumber: savedOrder.orderNumber,
+      tableNumber: savedOrder.tableNumber,
+      status: 'PENDING',
+      createdAt: savedOrder.createdAt,
+      items: savedOrder.items.map((i: any) => ({
+        id: i.id,
+        menuItemId: i.menuItemId,
+        name: i.name,
+        quantity: i.quantity,
+        notes: i.notes,
+        status: 'PENDING'
+      }))
+    });
+
+    this.syncGateway.broadcastOrderUpdate(savedOrder);
+
+    return { success: true, orderNumber: savedOrder.orderNumber };
+  }
 }
