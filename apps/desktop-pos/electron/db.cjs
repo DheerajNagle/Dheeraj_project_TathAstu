@@ -28,11 +28,12 @@ db.pragma('foreign_keys = ON');
 
 // Initialize schema
 function initSchema() {
-  // Migration check: check if 'license_metadata' table exists in SQLite
+  // Migration check: check if 'license_metadata' and 'payment_settings' tables exist in SQLite
   let needsMigration = false;
   try {
     const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='license_metadata'").get();
-    if (!tableExists) {
+    const payExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='payment_settings'").get();
+    if (!tableExists || !payExists) {
       needsMigration = true;
     }
   } catch (e) {
@@ -55,6 +56,7 @@ function initSchema() {
       DROP TABLE IF EXISTS pos_sequence;
       DROP TABLE IF EXISTS print_retry_queue;
       DROP TABLE IF EXISTS license_metadata;
+      DROP TABLE IF EXISTS payment_settings;
     `);
   }
 
@@ -202,6 +204,15 @@ function initSchema() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    -- 15. Dynamic UPI QR Settings
+    CREATE TABLE IF NOT EXISTS payment_settings (
+      vpa_id TEXT PRIMARY KEY,
+      merchant_name TEXT NOT NULL,
+      enable_dynamic_upi INTEGER DEFAULT 1
+    );
+    INSERT OR IGNORE INTO payment_settings (vpa_id, merchant_name, enable_dynamic_upi)
+    VALUES ('tathastopos@okaxis', 'TathAstu Restaurant', 1);
   `);
 
   seedMockData();
@@ -536,6 +547,16 @@ function getLicenseToken() {
   return row ? row.value : null;
 }
 
+function getPaymentSettings() {
+  return db.prepare("SELECT * FROM payment_settings LIMIT 1").get();
+}
+
+function savePaymentSettings(vpaId, merchantName, enableDynamicUpi) {
+  db.prepare("DELETE FROM payment_settings").run();
+  db.prepare("INSERT INTO payment_settings (vpa_id, merchant_name, enable_dynamic_upi) VALUES (?, ?, ?)")
+    .run(vpaId, merchantName, enableDynamicUpi);
+}
+
 module.exports = {
   initSchema,
   getTables,
@@ -557,5 +578,7 @@ module.exports = {
   saveLicenseKey,
   getLicenseKey,
   saveLicenseToken,
-  getLicenseToken
+  getLicenseToken,
+  getPaymentSettings,
+  savePaymentSettings
 };

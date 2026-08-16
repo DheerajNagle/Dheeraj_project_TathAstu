@@ -137,6 +137,26 @@ app.whenReady().then(() => {
       orderNumber: `ORD-${today}-${seq.toString().padStart(4, '0')}`
     };
   });
+
+  ipcMain.handle('payment:get-upi-qr-preview', async (event, amount, orderNumber) => {
+    const QRCode = require('qrcode');
+    const { generateUPIIntent } = require('./services/upi.cjs');
+    const paySettings = db.getPaymentSettings() || { vpa_id: 'tathastopos@okaxis', merchant_name: 'TathAstu Restaurant', enable_dynamic_upi: 1 };
+    const upiIntent = generateUPIIntent(paySettings.vpa_id, paySettings.merchant_name, amount, orderNumber);
+    try {
+      const qrDataUrl = await QRCode.toDataURL(upiIntent);
+      return { success: true, upiUri: upiIntent, qrDataUrl };
+    } catch (err) {
+      console.error('[UPI Preview] Failed to generate QR base64:', err);
+      return { success: false, msg: 'QR Code generation failed.' };
+    }
+  });
+
+  ipcMain.handle('db:get-payment-settings', () => db.getPaymentSettings());
+  ipcMain.handle('db:save-payment-settings', (event, vpaId, merchantName, enableDynamicUpi) => {
+    db.savePaymentSettings(vpaId, merchantName, enableDynamicUpi);
+    return { success: true };
+  });
   
   // Licensing IPC Handlers
   ipcMain.handle('license:check-status', async () => {

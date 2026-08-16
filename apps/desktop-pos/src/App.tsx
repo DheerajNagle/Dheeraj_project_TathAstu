@@ -101,6 +101,9 @@ interface ElectronAPI {
   onUpdaterProgress: (callback: (percent: number) => void) => void;
   onUpdaterDownloaded: (callback: (info: any) => void) => void;
   quitAndInstallUpdate: () => Promise<void>;
+  getPaymentSettings: () => Promise<{ vpa_id: string; merchant_name: string; enable_dynamic_upi: number } | null>;
+  savePaymentSettings: (vpaId: string, merchantName: string, enableDynamicUpi: number) => Promise<{ success: boolean }>;
+  getUPIQRPreview: (amount: number, orderNumber: string) => Promise<{ success: boolean; upiUri: string; qrDataUrl: string; msg?: string }>;
 }
 
 declare global {
@@ -158,6 +161,18 @@ function App() {
   const [updateDownloaded, setUpdateDownloaded] = useState<boolean>(false);
   const [updateInfo, setUpdateInfo] = useState<any>(null);
 
+  // Payment Settings & Live UPI Preview States
+  const [upiSettingsVpa, setUpiSettingsVpa] = useState<string>('tathastopos@okaxis');
+  const [upiSettingsName, setUpiSettingsName] = useState<string>('TathAstu Restaurant');
+  const [upiSettingsEnabled, setUpiSettingsEnabled] = useState<boolean>(true);
+
+  // Live Checkout UPI QR preview modal states
+  const [showUpiCheckoutModal, setShowUpiCheckoutModal] = useState<boolean>(false);
+  const [checkoutUpiQrDataUrl, setCheckoutUpiQrDataUrl] = useState<string>('');
+  const [checkoutUpiIntent, setCheckoutUpiIntent] = useState<string>('');
+  const [checkoutOrderNumber, setCheckoutOrderNumber] = useState<string>('');
+  const [checkoutOrderId, setCheckoutOrderId] = useState<string>('');
+
 
   // Modifiers
   const [modifierItem, setModifierItem] = useState<SQLiteItem | null>(null);
@@ -183,14 +198,15 @@ function App() {
   const refreshData = async () => {
     try {
       const api = window.electronAPI;
-      const [tList, cList, iList, oList, qList, ingList, shiftData] = await Promise.all([
+      const [tList, cList, iList, oList, qList, ingList, shiftData, paySettings] = await Promise.all([
         api.getTables(),
         api.getCategories(),
         api.getItems(),
         api.getOrders(),
         api.getSyncQueue(),
         api.getIngredients(),
-        api.getActiveShift()
+        api.getActiveShift(),
+        api.getPaymentSettings()
       ]);
       setTables(tList);
       setCategories(cList);
@@ -199,6 +215,11 @@ function App() {
       setSyncQueue(qList);
       setIngredients(ingList);
       setActiveShift(shiftData);
+      if (paySettings) {
+        setUpiSettingsVpa(paySettings.vpa_id);
+        setUpiSettingsName(paySettings.merchant_name);
+        setUpiSettingsEnabled(paySettings.enable_dynamic_upi === 1);
+      }
       if (shiftData) {
         setActualCashDrawer(shiftData.opening_balance + shiftData.total_cash_sales);
       }
@@ -452,6 +473,23 @@ function App() {
       return;
     }
     const { orderId, orderNumber } = await window.electronAPI.getNextIdentifiers();
+
+    if (paymentMethod === 'UPI' && upiSettingsEnabled) {
+      try {
+        const preview = await window.electronAPI.getUPIQRPreview(cartTotal, orderNumber);
+        if (preview.success) {
+          setCheckoutUpiQrDataUrl(preview.qrDataUrl);
+          setCheckoutUpiIntent(preview.upiUri);
+          setCheckoutOrderNumber(orderNumber);
+          setCheckoutOrderId(orderId);
+          setShowUpiCheckoutModal(true);
+          return;
+        }
+      } catch (err) {
+        console.error('[UPI Intent Checkout] Failed to fetch QR preview, falling back:', err);
+      }
+    }
+
     await executeFinalCheckout(paymentMethod, orderId, orderNumber);
   };
 
@@ -1465,6 +1503,57 @@ function App() {
               />
               <span className="text-[9px] text-gray-400 font-semibold block mt-1">Leaves empty to run card payment terminal simulator.</span>
             </div>
+
+            {/* Dynamic UPI Settings */}
+            <div className="pt-4 border-t border-gray-100 space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Enable Dynamic UPI QR</label>
+                <input
+                  type="checkbox"
+                  checked={upiSettingsEnabled}
+                  onChange={async (e) => {
+                    const checked = e.target.checked;
+                    setUpiSettingsEnabled(checked);
+                    await window.electronAPI.savePaymentSettings(upiSettingsVpa, upiSettingsName, checked ? 1 : 0);
+                  }}
+                  className="rounded text-orange-500 focus:ring-orange-500 h-4 w-4"
+                />
+              </div>
+
+              {upiSettingsEnabled && (
+                <>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block">Merchant UPI ID (VPA)</label>
+                    <input
+                      type="text"
+                      value={upiSettingsVpa}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        setUpiSettingsVpa(val);
+                        await window.electronAPI.savePaymentSettings(val, upiSettingsName, upiSettingsEnabled ? 1 : 0);
+                      }}
+                      placeholder="e.g. restaurant@upi"
+                      className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block">Merchant Store Name</label>
+                    <input
+                      type="text"
+                      value={upiSettingsName}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        setUpiSettingsName(val);
+                        await window.electronAPI.savePaymentSettings(upiSettingsVpa, val, upiSettingsEnabled ? 1 : 0);
+                      }}
+                      placeholder="e.g. TathAstu Restaurant"
+                      className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           
           <div className="pt-6 border-t border-gray-100 text-xs text-gray-400 space-y-1">
@@ -1599,6 +1688,55 @@ function App() {
             </div>
             
             <p className="text-[10px] text-gray-500">Please tap, swipe or insert card on the reader device.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Checkout UPI QR Code Modal */}
+      {showUpiCheckoutModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-6 select-none animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl border border-gray-100 flex flex-col p-6 space-y-6 relative">
+            <div className="text-center">
+              <span className="text-3xl">📱</span>
+              <h3 className="text-lg font-black tracking-tight text-gray-800 uppercase mt-2">Dynamic UPI QR</h3>
+              <p className="text-[10px] text-gray-500 font-semibold mt-1">Scan this code using any UPI payment app to charge the client.</p>
+            </div>
+
+            {/* QR Code Graphic Frame */}
+            <div className="flex flex-col items-center justify-center p-4 bg-gray-50 rounded-2xl border border-gray-100 relative">
+              {checkoutUpiQrDataUrl ? (
+                <img src={checkoutUpiQrDataUrl} alt="UPI Payment QR Code" className="w-48 h-48 object-contain rounded-xl shadow-sm" />
+              ) : (
+                <div className="w-48 h-48 flex items-center justify-center text-[10px] font-bold text-gray-400">Loading QR Code...</div>
+              )}
+              <div className="mt-3 text-[10px] font-extrabold text-orange-600 bg-orange-50 border border-orange-200 px-3 py-1 rounded-full uppercase tracking-wider">
+                Amount: ₹{cartTotal.toFixed(2)}
+              </div>
+            </div>
+
+            <div className="space-y-2 text-left bg-gray-50 p-4 rounded-xl border border-gray-150 font-mono text-[10px]">
+              <div className="flex justify-between"><span className="text-gray-400">Order Ref:</span><span className="font-bold text-gray-850">{checkoutOrderNumber}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Merchant VPA:</span><span className="font-bold text-gray-850">{upiSettingsVpa}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Intent URL:</span><span className="font-bold text-gray-850 truncate max-w-[180px]">{checkoutUpiIntent}</span></div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowUpiCheckoutModal(false)}
+                className="flex-1 py-3 border border-gray-200 hover:bg-gray-50 text-gray-500 hover:text-gray-700 text-xs font-black uppercase rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setShowUpiCheckoutModal(false);
+                  await executeFinalCheckout('UPI', checkoutOrderId, checkoutOrderNumber);
+                }}
+                className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white text-xs font-black uppercase rounded-xl transition-all shadow-md shadow-orange-500/20"
+              >
+                Payment Received
+              </button>
+            </div>
           </div>
         </div>
       )}

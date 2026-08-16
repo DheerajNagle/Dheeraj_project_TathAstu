@@ -110,9 +110,14 @@ async function printKOT(order, printerConfig = { type: 'MOCK' }) {
 }
 
 async function printBill(order, printerConfig = { type: 'MOCK' }) {
+  const db = require('./db.cjs');
+  const { generateUPIIntent } = require('./services/upi.cjs');
   const nowStr = new Date(order.createdAt).toLocaleString();
-  const upiUri = generateUPIUri(order.order_number, order.total);
   
+  const paySettings = db.getPaymentSettings() || { vpa_id: 'tathastopos@okaxis', merchant_name: 'TathAstu Restaurant', enable_dynamic_upi: 1 };
+  const upiUri = generateUPIIntent(paySettings.vpa_id, paySettings.merchant_name, order.total, order.order_number);
+  const showUPI = paySettings.enable_dynamic_upi === 1;
+
   // Calculate splits for receipt layout
   const subtotal = order.subTotal;
   const discount = order.discount || 0;
@@ -153,9 +158,12 @@ async function printBill(order, printerConfig = { type: 'MOCK' }) {
   txt += `----------------------------------------\n`;
   txt += `Net Payable:               ₹${order.total.toFixed(2).padStart(11)}\n`;
   txt += `----------------------------------------\n`;
-  txt += `Scan to Pay via UPI:\n`;
-  txt += `[UPI QR CODE LINK: ${upiUri}]\n`;
-  txt += `----------------------------------------\n`;
+  if (showUPI) {
+    txt += `Scan & Pay via any UPI App:\n`;
+    txt += `(GPay, PhonePe, Paytm)\n`;
+    txt += `[UPI QR CODE LINK: ${upiUri}]\n`;
+    txt += `----------------------------------------\n`;
+  }
   txt += `         Thank you! Visit again.        \n`;
   txt += `========================================\n`;
 
@@ -207,10 +215,13 @@ async function printBill(order, printerConfig = { type: 'MOCK' }) {
       printer.drawLine();
       
       // Print Native UPI QR Code
-      printer.alignCenter();
-      printer.println("Scan to Pay via UPI");
-      printer.printQR(upiUri);
-      printer.println("");
+      if (showUPI) {
+        printer.alignCenter();
+        printer.println("Scan & Pay via any UPI App");
+        printer.println("(GPay, PhonePe, Paytm)");
+        printer.printQR(upiUri);
+        printer.println("");
+      }
       printer.println("Thank you! Visit again.");
       
       printer.cut();

@@ -33,5 +33,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdaterAvailable: (callback) => ipcRenderer.on('updater:available', (event, info) => callback(info)),
   onUpdaterProgress: (callback) => ipcRenderer.on('updater:progress', (event, percent) => callback(percent)),
   onUpdaterDownloaded: (callback) => ipcRenderer.on('updater:downloaded', (event, info) => callback(info)),
-  quitAndInstallUpdate: () => ipcRenderer.invoke('updater:quit-and-install')
+  quitAndInstallUpdate: () => ipcRenderer.invoke('updater:quit-and-install'),
+  getPaymentSettings: () => ipcRenderer.invoke('db:get-payment-settings'),
+  savePaymentSettings: (vpaId, merchantName, enableDynamicUpi) => ipcRenderer.invoke('db:save-payment-settings', vpaId, merchantName, enableDynamicUpi),
+  getUPIQRPreview: (amount, orderNumber) => ipcRenderer.invoke('payment:get-upi-qr-preview', amount, orderNumber)
 });
