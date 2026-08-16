@@ -91,6 +91,7 @@ interface ElectronAPI {
   triggerSync: () => Promise<any[]>;
   getIngredients: () => Promise<SQLiteIngredient[]>;
   getActiveShift: () => Promise<SQLiteShift | null>;
+  getNextIdentifiers: () => Promise<{ orderId: string; orderNumber: string }>;
   startShift: (cashierName: string, openingBalance: number) => Promise<SQLiteShift>;
   endShift: (shiftId: string, actualDrawerCash: number) => Promise<{ shift: SQLiteShift; reportText: string }>;
   pushPaymentTerminal: (amount: number, orderNumber: string, terminalIp: string) => Promise<{ success: boolean; referenceId: string; msg: string }>;
@@ -339,21 +340,6 @@ function App() {
   const sgst = discountedSubtotal * 0.025;
   const cartTotal = discountedSubtotal + cgst + sgst;
 
-  // Composite Key Generator for Offline Orders
-  const generateCompositeOrderId = () => {
-    const outletId = 'OUT01';
-    const deviceId = 'POS01';
-    const timestamp = Date.now();
-    const sequence = Math.floor(1000 + Math.random() * 9000);
-    return `${outletId}-${deviceId}-${timestamp}-${sequence}`;
-  };
-
-  const generateOrderNumber = () => {
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const serial = Math.floor(100 + Math.random() * 900);
-    return `ORD-${today}-${serial}`;
-  };
-
   // Push payment intent to local EDC card reader terminal
   const handleEDCPush = async () => {
     if (cart.length === 0) return;
@@ -363,7 +349,7 @@ function App() {
       return;
     }
 
-    const orderNumber = generateOrderNumber();
+    const { orderId, orderNumber } = await window.electronAPI.getNextIdentifiers();
     setIsPushingEDC(true);
     setEdcProgressMsg('Sending transaction parameters to terminal reader...');
 
@@ -372,7 +358,7 @@ function App() {
       if (res.success) {
         setEdcProgressMsg('Authorization approved! Saving transaction to database...');
         await new Promise(resolve => setTimeout(resolve, 800));
-        await executeFinalCheckout('CARD', orderNumber);
+        await executeFinalCheckout('CARD', orderId, orderNumber);
       } else {
         alert(`Payment declined: ${res.msg || 'Transaction rejected by card machine.'}`);
       }
@@ -391,12 +377,11 @@ function App() {
       setActiveTab('business');
       return;
     }
-    const orderNumber = generateOrderNumber();
-    await executeFinalCheckout(paymentMethod, orderNumber);
+    const { orderId, orderNumber } = await window.electronAPI.getNextIdentifiers();
+    await executeFinalCheckout(paymentMethod, orderId, orderNumber);
   };
 
-  const executeFinalCheckout = async (paymentMethod: 'CASH' | 'UPI' | 'CARD', orderNumber: string) => {
-    const orderId = generateCompositeOrderId();
+  const executeFinalCheckout = async (paymentMethod: 'CASH' | 'UPI' | 'CARD', orderId: string, orderNumber: string) => {
     const nowStr = new Date().toISOString();
 
     const orderPayload = {

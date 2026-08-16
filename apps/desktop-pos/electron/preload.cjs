@@ -24,7 +24,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Shift & Inventory API
   getIngredients: () => ipcRenderer.invoke('db:get-ingredients'),
   getActiveShift: () => ipcRenderer.invoke('db:get-active-shift'),
+  getNextIdentifiers: () => ipcRenderer.invoke('db:get-next-identifiers'),
   startShift: (cashierName, openingBalance) => ipcRenderer.invoke('db:start-shift', cashierName, openingBalance),
   endShift: (shiftId, actualDrawerCash) => ipcRenderer.invoke('db:end-shift', shiftId, actualDrawerCash),
-  pushPaymentTerminal: (amount, orderNumber, terminalIp) => ipcRenderer.invoke('payment:push-terminal', amount, orderNumber, terminalIp)
+  pushPaymentTerminal: (amount, orderNumber, terminalIp) => ipcRenderer.invoke('payment:push-terminal', amount, orderNumber, terminalIp),
+  checkLicense: () => ipcRenderer.invoke('license:check'),
+  activateLicense: (licenseKey) => ipcRenderer.invoke('license:activate', licenseKey)
 });

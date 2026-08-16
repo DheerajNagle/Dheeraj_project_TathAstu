@@ -82,6 +82,31 @@ async function runTest() {
   console.log(`  * Actual Cash:   ₹${closedShift.closing_balance.toFixed(2)}`);
   console.log(`  * Difference:    ₹${closedShift.drawer_difference.toFixed(2)} (Drawer short by ₹6.00)`);
 
+  // 7. Verify Incremental Order Sequence & Clock-drift protection
+  console.log('\n--- Verifying Strict Sequence Counter ---');
+  const seq1 = db.getNextSequenceValue('order_sequence');
+  const seq2 = db.getNextSequenceValue('order_sequence');
+  console.log(`  * Sequence 1: ${seq1}`);
+  console.log(`  * Sequence 2: ${seq2}`);
+  if (seq2 === seq1 + 1) {
+    console.log('  * Strict incremental sequence verified.');
+  } else {
+    throw new Error('Sequence validation failed!');
+  }
+
+  // 8. Verify Print Retry Queue
+  console.log('\n--- Verifying Print Queue Job Storage ---');
+  db.addPrintJob('BILL', { order: mockOrder, printerConfig: { type: 'TCP', address: '192.168.1.99' } });
+  const pendingJobs = db.getPendingPrintJobs();
+  console.log(`  * Pending Print Jobs: ${pendingJobs.length}`);
+  if (pendingJobs.length > 0) {
+    console.log(`  * Found queued job: Type: ${pendingJobs[0].job_type}, Date: ${pendingJobs[0].created_at}`);
+    db.clearPrintJob(pendingJobs[0].id);
+    console.log('  * Cleared print job from queue successfully.');
+  } else {
+    throw new Error('Print queue insertion failed!');
+  }
+
   console.log('\n--- Test Completed Successfully ---');
 }
 
