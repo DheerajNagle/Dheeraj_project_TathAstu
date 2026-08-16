@@ -157,6 +157,10 @@ app.whenReady().then(() => {
     db.savePaymentSettings(vpaId, merchantName, enableDynamicUpi);
     return { success: true };
   });
+
+  ipcMain.handle('db:add-menu-item', (event, name, price, categoryId, code) => {
+    return db.addMenuItem(name, price, categoryId, code);
+  });
   
   // Licensing IPC Handlers
   ipcMain.handle('license:check-status', async () => {

@@ -36,5 +36,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   quitAndInstallUpdate: () => ipcRenderer.invoke('updater:quit-and-install'),
   getPaymentSettings: () => ipcRenderer.invoke('db:get-payment-settings'),
   savePaymentSettings: (vpaId, merchantName, enableDynamicUpi) => ipcRenderer.invoke('db:save-payment-settings', vpaId, merchantName, enableDynamicUpi),
-  getUPIQRPreview: (amount, orderNumber) => ipcRenderer.invoke('payment:get-upi-qr-preview', amount, orderNumber)
+  getUPIQRPreview: (amount, orderNumber) => ipcRenderer.invoke('payment:get-upi-qr-preview', amount, orderNumber),
+  addMenuItem: (name, price, categoryId, code) => ipcRenderer.invoke('db:add-menu-item', name, price, categoryId, code)
 });

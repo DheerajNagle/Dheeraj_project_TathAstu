@@ -104,6 +104,7 @@ interface ElectronAPI {
   getPaymentSettings: () => Promise<{ vpa_id: string; merchant_name: string; enable_dynamic_upi: number } | null>;
   savePaymentSettings: (vpaId: string, merchantName: string, enableDynamicUpi: number) => Promise<{ success: boolean }>;
   getUPIQRPreview: (amount: number, orderNumber: string) => Promise<{ success: boolean; upiUri: string; qrDataUrl: string; msg?: string }>;
+  addMenuItem: (name: string, price: number, categoryId: string, code: string) => Promise<{ success: boolean; id: string }>;
 }
 
 declare global {
@@ -172,6 +173,45 @@ function App() {
   const [checkoutUpiIntent, setCheckoutUpiIntent] = useState<string>('');
   const [checkoutOrderNumber, setCheckoutOrderNumber] = useState<string>('');
   const [checkoutOrderId, setCheckoutOrderId] = useState<string>('');
+
+  // Add Dish state hooks
+  const [newDishName, setNewDishName] = useState<string>('');
+  const [newDishPrice, setNewDishPrice] = useState<number | ''>('');
+  const [newDishCode, setNewDishCode] = useState<string>('');
+  const [newDishCategory, setNewDishCategory] = useState<string>('cat-1');
+  const [isAddingDish, setIsAddingDish] = useState<boolean>(false);
+
+  const handleAddDishSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDishName.trim() || newDishPrice === '' || !newDishCode.trim()) {
+      alert('Please fill out all fields.');
+      return;
+    }
+    
+    setIsAddingDish(true);
+    try {
+      const res = await window.electronAPI.addMenuItem(
+        newDishName.trim(),
+        Number(newDishPrice),
+        newDishCategory,
+        newDishCode.trim()
+      );
+      if (res.success) {
+        alert(`Dish "${newDishName}" added successfully locally and queued for cloud sync!`);
+        setNewDishName('');
+        setNewDishPrice('');
+        setNewDishCode('');
+        await refreshData();
+      } else {
+        alert('Failed to save menu item.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error adding menu item.');
+    } finally {
+      setIsAddingDish(false);
+    }
+  };
 
 
   // Modifiers
@@ -1554,6 +1594,69 @@ function App() {
                 </>
               )}
             </div>
+
+            {/* Add New Dish (Catalog Management) */}
+            <form onSubmit={handleAddDishSubmit} className="pt-4 border-t border-gray-100 space-y-3 text-left">
+              <label className="text-[10px] font-black text-gray-500 uppercase tracking-wider block">Add New Dish</label>
+              
+              <div>
+                <label className="text-[9px] font-bold text-gray-400 uppercase block">Dish Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newDishName}
+                  onChange={e => setNewDishName(e.target.value)}
+                  placeholder="e.g. Paneer Tikka Masala"
+                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[9px] font-bold text-gray-400 uppercase block">Price (₹)</label>
+                  <input
+                    type="number"
+                    required
+                    value={newDishPrice}
+                    onChange={e => setNewDishPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="250"
+                    className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-gray-400 uppercase block">Code (unique)</label>
+                  <input
+                    type="text"
+                    required
+                    value={newDishCode}
+                    onChange={e => setNewDishCode(e.target.value)}
+                    placeholder="108"
+                    className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-bold text-gray-400 uppercase block">Category</label>
+                <select
+                  value={newDishCategory}
+                  onChange={e => setNewDishCategory(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 border border-gray-200 bg-white rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500 cursor-pointer"
+                >
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isAddingDish}
+                className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 text-white text-xs font-black uppercase rounded-lg transition-all shadow-md shadow-orange-500/10 cursor-pointer"
+              >
+                {isAddingDish ? 'Adding...' : 'Add to Menu Grid'}
+              </button>
+            </form>
           </div>
           
           <div className="pt-6 border-t border-gray-100 text-xs text-gray-400 space-y-1">
