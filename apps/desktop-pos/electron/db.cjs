@@ -28,10 +28,10 @@ db.pragma('foreign_keys = ON');
 
 // Initialize schema
 function initSchema() {
-  // Migration check: check if 'ingredients' table exists in SQLite
+  // Migration check: check if 'pos_sequence' table exists in SQLite
   let needsMigration = false;
   try {
-    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ingredients'").get();
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='pos_sequence'").get();
     if (!tableExists) {
       needsMigration = true;
     }
@@ -40,7 +40,7 @@ function initSchema() {
   }
 
   if (needsMigration) {
-    console.log('Ingredients table missing. Wiping and recreating tables...');
+    console.log('Database schema outdated. Wiping and recreating tables...');
     db.exec(`
       DROP TABLE IF EXISTS modifiers;
       DROP TABLE IF EXISTS order_items;
@@ -52,6 +52,8 @@ function initSchema() {
       DROP TABLE IF EXISTS recipes;
       DROP TABLE IF EXISTS ingredients;
       DROP TABLE IF EXISTS shifts;
+      DROP TABLE IF EXISTS pos_sequence;
+      DROP TABLE IF EXISTS print_retry_queue;
     `);
   }
 
@@ -171,6 +173,28 @@ function initSchema() {
       total_card_sales REAL DEFAULT 0,
       drawer_difference REAL
     );
+
+    -- 11. Incremental POS Sequences (Clock-drift protection)
+    CREATE TABLE IF NOT EXISTS pos_sequence (
+      key TEXT PRIMARY KEY,
+      value INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO pos_sequence (key, value) VALUES ('order_sequence', 1);
+
+    -- 12. Printing Retry Queue (Hardware resilience)
+    CREATE TABLE IF NOT EXISTS print_retry_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_type TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    -- 13. Index Optimizations for Large Datasets (50k+ orders scale)
+    CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+    CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+    CREATE INDEX IF NOT EXISTS idx_shifts_status ON shifts(status);
+    CREATE INDEX IF NOT EXISTS idx_recipes_item_id ON recipes(item_id);
   `);
 
   seedMockData();
@@ -462,6 +486,29 @@ function endShift(shiftId, actualDrawerCash) {
   return db.prepare("SELECT * FROM shifts WHERE id = ?").get(shiftId);
 }
 
+function getNextSequenceValue(key) {
+  let val = 1;
+  db.transaction(() => {
+    db.prepare("UPDATE pos_sequence SET value = value + 1 WHERE key = ?").run(key);
+    const row = db.prepare("SELECT value FROM pos_sequence WHERE key = ?").get(key);
+    val = row.value;
+  })();
+  return val;
+}
+
+function addPrintJob(jobType, payload) {
+  db.prepare("INSERT INTO print_retry_queue (job_type, payload, created_at) VALUES (?, ?, ?)")
+    .run(jobType, JSON.stringify(payload), new Date().toISOString());
+}
+
+function getPendingPrintJobs() {
+  return db.prepare("SELECT * FROM print_retry_queue ORDER BY created_at ASC").all();
+}
+
+function clearPrintJob(id) {
+  db.prepare("DELETE FROM print_retry_queue WHERE id = ?").run(id);
+}
+
 module.exports = {
   initSchema,
   getTables,
@@ -475,5 +522,9 @@ module.exports = {
   getIngredients,
   getActiveShift,
   startShift,
-  endShift
+  endShift,
+  getNextSequenceValue,
+  addPrintJob,
+  getPendingPrintJobs,
+  clearPrintJob
 };

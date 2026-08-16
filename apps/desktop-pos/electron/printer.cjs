@@ -99,7 +99,10 @@ async function printKOT(order, printerConfig = { type: 'MOCK' }) {
       await printer.execute();
       console.log('KOT printed successfully to TCP.');
     } catch (e) {
-      console.error('Failed to send KOT to TCP printer:', e);
+      console.error('Failed to send KOT to TCP printer, queuing:', e.message);
+      const db = require('./db.cjs');
+      db.addPrintJob('KOT', { order, printerConfig });
+      return { success: false, error: 'Printer disconnected. Job queued.', preview: output };
     }
   }
 
@@ -214,7 +217,10 @@ async function printBill(order, printerConfig = { type: 'MOCK' }) {
       await printer.execute();
       console.log('Bill printed successfully to TCP.');
     } catch (e) {
-      console.error('Failed to send bill to TCP printer:', e);
+      console.error('Failed to send bill to TCP printer, queuing:', e.message);
+      const db = require('./db.cjs');
+      db.addPrintJob('BILL', { order, printerConfig });
+      return { success: false, error: 'Printer disconnected. Job queued.', preview: output };
     }
   }
 
