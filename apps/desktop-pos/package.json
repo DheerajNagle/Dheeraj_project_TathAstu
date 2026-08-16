@@ -18,7 +18,8 @@
     "better-sqlite3": "^9.4.3",
     "node-thermal-printer": "^4.6.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.6.0",

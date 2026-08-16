@@ -289,6 +289,42 @@ function clearSyncItem(id) {
   return db.prepare("UPDATE sync_queue SET status = 'SYNCED' WHERE id = ?").run(id);
 }
 
+function mergeCatalog(categories, items) {
+  const insertCategory = db.prepare(`
+    INSERT OR REPLACE INTO categories (id, name, description, is_active)
+    VALUES (?, ?, ?, ?)
+  `);
+  const insertItem = db.prepare(`
+    INSERT OR REPLACE INTO items (id, code, name, description, price, category_id, image_url, is_available, tax_rate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  db.transaction(() => {
+    for (const cat of categories) {
+      insertCategory.run(
+        cat.id,
+        cat.name,
+        cat.description || null,
+        cat.isActive !== undefined ? (cat.isActive ? 1 : 0) : 1
+      );
+    }
+    for (const item of items) {
+      const itemCode = item.code || `C-${item.id.slice(0, 4).toUpperCase()}`;
+      insertItem.run(
+        item.id,
+        itemCode,
+        item.name,
+        item.description || null,
+        item.price,
+        item.categoryId,
+        item.imageUrl || null,
+        item.isAvailable !== undefined ? (item.isAvailable ? 1 : 0) : 1,
+        item.taxRate || 0.05
+      );
+    }
+  })();
+}
+
 module.exports = {
   initSchema,
   getTables,
@@ -297,5 +333,6 @@ module.exports = {
   getOrders,
   saveOrder,
   getSyncQueue,
-  clearSyncItem
+  clearSyncItem,
+  mergeCatalog
 };

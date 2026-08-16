@@ -16,5 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Printing API
   printKOT: (order, config) => ipcRenderer.invoke('print:kot', order, config),
-  printBill: (order, config) => ipcRenderer.invoke('print:bill', order, config)
+  printBill: (order, config) => ipcRenderer.invoke('print:bill', order, config),
+
+  // Sync API
+  triggerSync: () => ipcRenderer.invoke('sync:trigger')
 });

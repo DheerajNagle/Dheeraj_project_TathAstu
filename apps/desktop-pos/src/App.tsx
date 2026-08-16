@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { io } from 'socket.io-client';
 import type { OrderStatus, PaymentStatus, OrderSource } from '@tathastu/shared-types';
 import { TableGrid } from './components/TableGrid.js';
 import { ModifierModal } from './components/ModifierModal.js';
@@ -38,6 +39,22 @@ interface CartItem {
   notes: string;
 }
 
+interface KDSTicket {
+  id: string;
+  orderNumber: string;
+  tableNumber: string | null;
+  status: string;
+  createdAt: string;
+  items: Array<{
+    id: string;
+    menuItemId: string;
+    name: string;
+    quantity: number;
+    notes: string | null;
+    status: string;
+  }>;
+}
+
 interface ElectronAPI {
   platform: string;
   ping: () => string;
@@ -50,6 +67,7 @@ interface ElectronAPI {
   clearSyncItem: (id: number) => Promise<any>;
   printKOT: (order: any, config: any) => Promise<{ success: boolean; preview: string }>;
   printBill: (order: any, config: any) => Promise<{ success: boolean; preview: string }>;
+  triggerSync: () => Promise<any[]>;
 }
 
 declare global {
@@ -72,7 +90,7 @@ function App() {
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState<'pos' | 'tables' | 'orders' | 'sync'>('pos');
+  const [activeTab, setActiveTab] = useState<'pos' | 'tables' | 'kds' | 'orders' | 'sync'>('pos');
   
   // Custom inputs
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -82,7 +100,6 @@ function App() {
   // Modifiers
   const [modifierItem, setModifierItem] = useState<SQLiteItem | null>(null);
   const [isModifierOpen, setIsModifierOpen] = useState<boolean>(false);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Hardware/Printing Config States
   const [printerType, setPrinterType] = useState<'MOCK' | 'TCP'>('MOCK');
@@ -91,6 +108,11 @@ function App() {
   const [printPreview, setPrintPreview] = useState<string>('');
   const [kotPreview, setKotPreview] = useState<string>('');
   const [printModalTab, setPrintModalTab] = useState<'bill' | 'kot'>('bill');
+
+  // Sync Engine & Real-time KDS States
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isCloudOnline, setIsCloudOnline] = useState<boolean>(false);
+  const [kdsTickets, setKdsTickets] = useState<KDSTicket[]>([]);
 
   // Focus ref for code search box (F4 shortcut)
   const codeSearchRef = useRef<HTMLInputElement>(null);
@@ -118,6 +140,40 @@ function App() {
 
   useEffect(() => {
     refreshData();
+  }, []);
+
+  // Connect to Socket.io for KDS and live connection status updates
+  useEffect(() => {
+    const socket = io('http://localhost:3000', {
+      transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+      setIsCloudOnline(true);
+      console.log('[KDS Socket] Connected to central cloud sync server.');
+    });
+
+    socket.on('disconnect', () => {
+      setIsCloudOnline(false);
+      console.log('[KDS Socket] Disconnected from central cloud sync server.');
+    });
+
+    socket.on('connect_error', () => {
+      setIsCloudOnline(false);
+    });
+
+    socket.on('kot:new', (ticket: KDSTicket) => {
+      console.log('[KDS Socket] Received new Kitchen ticket:', ticket);
+      // Avoid duplicate tickets
+      setKdsTickets(prev => {
+        if (prev.some(t => t.id === ticket.id)) return prev;
+        return [...prev, ticket];
+      });
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   // Keyboard shortcut listener (F1 - F12)
@@ -293,7 +349,7 @@ function App() {
     };
 
     try {
-      // 1. Save order to SQLite
+      // 1. Save order to local SQLite
       await window.electronAPI.saveOrder(orderPayload);
 
       // 2. Trigger silent prints (print KOT and customer bill receipt)
@@ -323,22 +379,25 @@ function App() {
     }
   };
 
-  // Sync Queue worker simulation
+  // Sync Queue worker manual trigger
   const triggerManualSync = async () => {
-    if (syncQueue.length === 0) return;
     setIsSyncing(true);
     try {
-      for (const item of syncQueue) {
-        await new Promise(r => setTimeout(r, 600));
-        await window.electronAPI.clearSyncItem(item.id);
-      }
+      const updatedQueue = await window.electronAPI.triggerSync();
+      setSyncQueue(updatedQueue);
       await refreshData();
-      alert('Synchronization complete.');
+      alert('Manual synchronization completed. Local database updated.');
     } catch (e) {
       console.error(e);
+      alert('Sync server connection unavailable.');
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  // KDS Action completed
+  const handleKDSComplete = (id: string) => {
+    setKdsTickets(prev => prev.filter(t => t.id !== id));
   };
 
   // Filter items by search bar query and category grid
@@ -376,6 +435,20 @@ function App() {
             >
               <span className="text-xl">🍽️</span>
               <span className="text-[9px] font-bold">Floor (F2)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('kds')}
+              className={`p-3 rounded-2xl flex flex-col items-center gap-1 transition-all relative ${
+                activeTab === 'kds' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:bg-gray-900 hover:text-white'
+              }`}
+            >
+              <span className="text-xl">🍳</span>
+              <span className="text-[9px] font-bold">KDS Screen</span>
+              {kdsTickets.length > 0 && (
+                <span className="absolute top-1 right-2 w-5 h-5 rounded-full bg-orange-600 text-[10px] text-white flex items-center justify-center font-bold border-2 border-gray-955 animate-pulse">
+                  {kdsTickets.length}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setActiveTab('orders')}
@@ -416,16 +489,17 @@ function App() {
             </div>
           </div>
 
+          {/* Cloud Sync Status Indicator */}
           <div className="flex items-center gap-4 text-xs font-bold text-gray-500">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-              Local Database: OK
+            <span className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${isCloudOnline ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`}></span>
+              {isCloudOnline ? 'Cloud Sync: Connected' : 'Cloud Sync: Offline (Local)'}
             </span>
             {syncQueue.length > 0 && (
               <button
                 onClick={triggerManualSync}
                 disabled={isSyncing}
-                className="px-3.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black rounded-lg transition-all"
+                className="px-3.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black rounded-lg transition-all shadow-md shadow-orange-500/10"
               >
                 {isSyncing ? 'Syncing...' : `Pending Sync: ${syncQueue.length} (F12)`}
               </button>
@@ -703,7 +777,78 @@ function App() {
             </div>
           )}
 
-          {/* 3. Orders History tab */}
+          {/* 3. Kitchen Display System (KDS) Screen */}
+          {activeTab === 'kds' && (
+            <div className="flex-1 p-8 overflow-y-auto space-y-6">
+              <div>
+                <h3 className="text-xl font-extrabold text-gray-800">Kitchen Display System (KDS)</h3>
+                <p className="text-xs text-gray-400 mt-1">Live order tickets received in real-time from active checkout terminals.</p>
+              </div>
+
+              {kdsTickets.length === 0 ? (
+                <div className="h-96 flex flex-col items-center justify-center text-gray-300 gap-2 border-2 border-dashed border-gray-200 rounded-2xl bg-white">
+                  <span className="text-4xl animate-bounce">🍳</span>
+                  <span className="text-xs font-bold">Kitchen queue is currently empty.</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {kdsTickets.map(ticket => {
+                    const elapsedMins = Math.floor((Date.now() - new Date(ticket.createdAt).getTime()) / 60000);
+                    return (
+                      <div
+                        key={ticket.id}
+                        className="bg-white rounded-2xl border-2 border-orange-100 overflow-hidden shadow-sm flex flex-col justify-between"
+                      >
+                        {/* Header */}
+                        <div className="p-4 bg-orange-50/50 border-b border-orange-100 flex justify-between items-center">
+                          <div>
+                            <span className="text-xs font-black text-orange-600 block">
+                              {ticket.tableNumber ? `TABLE ${ticket.tableNumber}` : 'TAKEAWAY'}
+                            </span>
+                            <span className="text-[10px] text-gray-400 font-bold">{ticket.orderNumber}</span>
+                          </div>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                            elapsedMins > 10 ? 'bg-red-500 text-white animate-pulse' : 'bg-orange-500 text-white'
+                          }`}>
+                            {elapsedMins}m ago
+                          </span>
+                        </div>
+
+                        {/* Items list */}
+                        <div className="p-5 flex-1 space-y-3">
+                          {ticket.items.map(item => (
+                            <div key={item.id} className="text-xs font-medium text-gray-700">
+                              <div className="flex items-center gap-2">
+                                <span className="font-extrabold text-sm text-orange-600">{item.quantity}x</span>
+                                <span className="font-bold text-gray-800">{item.name}</span>
+                              </div>
+                              {item.notes && (
+                                <p className="text-[10px] text-gray-400 font-semibold pl-6 mt-0.5 italic">
+                                  * Note: {item.notes}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Action footer */}
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+                          <button
+                            onClick={() => handleKDSComplete(ticket.id)}
+                            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-extrabold text-[10px] rounded-lg shadow-sm hover:scale-[1.02] active:scale-95 transition-all"
+                          >
+                            Mark Prepared ✓
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 4. Orders History tab */}
           {activeTab === 'orders' && (
             <div className="flex-1 p-8 overflow-y-auto space-y-6">
               <h3 className="text-xl font-extrabold text-gray-800">Offline Billing Logs</h3>
@@ -756,7 +901,7 @@ function App() {
             </div>
           )}
 
-          {/* 4. Sync status log tab */}
+          {/* 5. Sync status log tab */}
           {activeTab === 'sync' && (
             <div className="flex-1 p-8 overflow-y-auto space-y-6">
               <div className="flex justify-between items-center">
@@ -766,7 +911,7 @@ function App() {
                 </div>
                 <button
                   onClick={triggerManualSync}
-                  disabled={isSyncing || syncQueue.length === 0}
+                  disabled={isSyncing}
                   className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 text-white text-xs font-bold rounded-xl shadow transition-all"
                 >
                   {isSyncing ? 'Synchronizing...' : 'Upload Offline Queue (F12)'}
@@ -804,7 +949,9 @@ function App() {
                             </span>
                           </td>
                           <td className="p-4">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-750 animate-pulse">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              item.status === 'SYNCED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-750 animate-pulse'
+                            }`}>
                               {item.status}
                             </span>
                           </td>
