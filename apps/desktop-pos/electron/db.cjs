@@ -446,7 +446,7 @@ function startShift(cashierName, openingBalance) {
 }
 
 function endShift(shiftId, actualDrawerCash) {
-  const shift = db.prepare("SELECT * FROM shifts WHERE id = ?").get();
+  const shift = db.prepare("SELECT * FROM shifts WHERE id = ?").get(shiftId);
   if (!shift) return { success: false, error: 'Shift not found' };
 
   const expectedDrawerCash = shift.opening_balance + shift.total_cash_sales;
@@ -459,7 +459,7 @@ function endShift(shiftId, actualDrawerCash) {
     WHERE id = ?
   `).run(actualDrawerCash, now, difference, shiftId);
 
-  return db.prepare("SELECT * FROM shifts WHERE id = ?").get();
+  return db.prepare("SELECT * FROM shifts WHERE id = ?").get(shiftId);
 }
 
 module.exports = {

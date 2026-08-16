@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TathAstu Cloud Admin - Multi-Outlet Dashboard</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+  <!-- Socket.io Client CDN -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  
+  <style>
+    :root {
+      --bg-dark: #07070e;
+      --panel-bg: rgba(13, 13, 28, 0.6);
+      --border-glow: rgba(139, 92, 246, 0.2);
+      --neon-purple: #8b5cf6;
+      --neon-cyan: #06b6d4;
+      --neon-orange: #f97316;
+      --neon-green: #10b981;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(6, 118, 212, 0.15) 0px, transparent 50%);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding: 2.5rem;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .title-area h1 {
+      font-size: 2rem;
+      font-weight: 900;
+      background: linear-gradient(135deg, #fff 30%, var(--neon-purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+
+    .title-area p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    .sync-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: var(--panel-bg);
+      border: 1px solid var(--border-glow);
+      padding: 0.6rem 1.2rem;
+      border-radius: 1rem;
+      backdrop-filter: blur(12px);
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--neon-green);
+      box-shadow: 0 0 10px var(--neon-green);
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.6; }
+      50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 14px var(--neon-green); }
+      100% { transform: scale(0.9); opacity: 0.6; }
+    }
+
+    /* Grid Layouts */
+    .metrics-grid {
+      display: grid;
+      grid-template-cols: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .metric-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-glow);
+      border-radius: 1.25rem;
+      padding: 1.5rem;
+      backdrop-filter: blur(12px);
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(139, 92, 246, 0.4);
+      box-shadow: 0 10px 20px rgba(139, 92, 246, 0.05);
+    }
+
+    .metric-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+    }
+
+    .metric-value {
+      font-size: 1.8rem;
+      font-weight: 900;
+      margin-top: 0.5rem;
+      color: #fff;
+    }
+
+    .value-highlight {
+      background: linear-gradient(135deg, #fff, var(--neon-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .value-orange {
+      background: linear-gradient(135deg, #fff, var(--neon-orange));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .charts-grid {
+      display: grid;
+      grid-template-cols: 1fr 1fr;
+      gap: 2rem;
+      margin-bottom: 2.5rem;
+    }
+
+    @media (max-width: 900px) {
+      .charts-grid {
+        grid-template-cols: 1fr;
+      }
+    }
+
+    .panel-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-glow);
+      border-radius: 1.5rem;
+      padding: 2rem;
+      backdrop-filter: blur(12px);
+      min-height: 350px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      padding-bottom: 1rem;
+    }
+
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #fff;
+    }
+
+    /* Charts UI Styling */
+    .bar-chart-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      justify-content: center;
+      height: 80%;
+    }
+
+    .bar-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .bar-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .bar-track {
+      height: 8px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--neon-purple), var(--neon-cyan));
+      border-radius: 4px;
+      width: 0%;
+      transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .bar-fill-orange {
+      background: linear-gradient(90deg, var(--neon-orange), var(--neon-purple));
+    }
+
+    .pie-splits {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .pie-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.8rem;
+      background: rgba(255,255,255,0.02);
+      border-radius: 0.75rem;
+      border: 1px solid rgba(255,255,255,0.02);
+    }
+
+    .pie-legend {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .legend-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    /* Telemetry Feed Table */
+    .telemetry-panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-glow);
+      border-radius: 1.5rem;
+      padding: 2rem;
+      backdrop-filter: blur(12px);
+    }
+
+    .telemetry-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.8rem;
+      margin-top: 1rem;
+    }
+
+    .telemetry-table th {
+      color: var(--text-muted);
+      font-weight: 800;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.8px;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .telemetry-table td {
+      padding: 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.02);
+      font-weight: 600;
+    }
+
+    .telemetry-table tr:hover {
+      background: rgba(255,255,255,0.02);
+    }
+
+    .outlet-badge {
+      background: rgba(139, 92, 246, 0.15);
+      color: #c084fc;
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      padding: 0.25rem 0.6rem;
+      border-radius: 0.5rem;
+      font-size: 0.7rem;
+    }
+
+    .payment-badge {
+      background: rgba(6, 182, 212, 0.15);
+      color: #22d3ee;
+      border: 1px solid rgba(6, 182, 212, 0.25);
+      padding: 0.25rem 0.6rem;
+      border-radius: 0.5rem;
+      font-size: 0.7rem;
+    }
+
+    .status-badge {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      padding: 0.25rem 0.6rem;
+      border-radius: 0.5rem;
+      font-size: 0.7rem;
+    }
+
+    .flash-highlight {
+      animation: flash 1s ease-out;
+    }
+
+    @keyframes flash {
+      0% { background: rgba(139, 92, 246, 0.2); }
+      100% { background: transparent; }
+    }
+
+    button.btn-refresh {
+      background: var(--neon-purple);
+      color: #fff;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: 0.75rem;
+      font-weight: 700;
+      font-size: 0.8rem;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(139, 92, 246, 0.3);
+      transition: all 0.2s ease;
+    }
+
+    button.btn-refresh:hover {
+      background: #7c3aed;
+      transform: translateY(-1px);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header Section -->
+  <header>
+    <div class="title-area">
+      <h1>TathAstu Cloud Central Console</h1>
+      <p>Real-time analytics dashboard aggregating multiple dining outlets and POS devices</p>
+    </div>
+    <div style="display: flex; gap: 1rem; align-items: center;">
+      <button class="btn-refresh" onclick="loadMetrics()">Refresh Statistics</button>
+      <div class="sync-status">
+        <span class="status-dot"></span>
+        <span>Telemetry Server: Live</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Metrics Grid -->
+  <section class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-label">Total Cloud Revenue</div>
+      <div class="metric-value value-highlight" id="lbl-revenue">₹0.00</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Orders Logged</div>
+      <div class="metric-value" id="lbl-orders">0</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Average Order Value (AOV)</div>
+      <div class="metric-value value-orange" id="lbl-aov">₹0.00</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Connected Outlets</div>
+      <div class="metric-value" id="lbl-outlets">0</div>
+    </div>
+  </section>
+
+  <!-- Charts Layout -->
+  <section class="charts-grid">
+    <!-- Multi-Outlet comparison -->
+    <div class="panel-card">
+      <div class="panel-header">
+        <span class="panel-title">Multi-Outlet Performance</span>
+      </div>
+      <div class="bar-chart-container" id="chart-outlets">
+        <div style="color: var(--text-muted); text-align: center; font-size: 0.85rem;">No outlet transactions recorded yet.</div>
+      </div>
+    </div>
+
+    <!-- Revenue by Payment Channel and Top Items -->
+    <div class="panel-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <div class="panel-header" style="margin-bottom: 0.75rem;">
+          <span class="panel-title">Payment Channel Revenue Splits</span>
+        </div>
+        <div class="pie-splits" id="chart-payments">
+          <!-- Populated by script -->
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5rem;">
+        <div class="panel-header" style="margin-bottom: 0.75rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem;">
+          <span class="panel-title">Top 3 Selling Menu Items</span>
+        </div>
+        <div class="bar-chart-container" id="chart-topitems" style="height: auto; gap: 0.75rem;">
+          <!-- Populated by script -->
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Real-time telemetry feed -->
+  <section class="telemetry-panel">
+    <div class="panel-header">
+      <span class="panel-title">Live Transaction Telemetry Feed</span>
+      <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">Updates in real time via Socket.io</span>
+    </div>
+    <div style="overflow-x: auto;">
+      <table class="telemetry-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Order Number</th>
+            <th>Outlet ID</th>
+            <th>Billing Subtotal</th>
+            <th>Tax (5% GST)</th>
+            <th>Net Total</th>
+            <th>Payment Method</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="telemetry-tbody">
+          <tr>
+            <td colSpan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              Waiting for incoming transactions...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    // Load central REST API metrics
+    async function loadMetrics() {
+      try {
+        const response = await fetch('/api/admin/metrics');
+        const data = await response.json();
+
+        // 1. Update Core metrics
+        document.getElementById('lbl-revenue').innerText = '₹' + data.totalSales.toFixed(2);
+        document.getElementById('lbl-orders').innerText = data.orderCount;
+        document.getElementById('lbl-aov').innerText = '₹' + data.aov.toFixed(2);
+        document.getElementById('lbl-outlets').innerText = data.outletSplits.length;
+
+        // 2. Render Outlet Comparison Chart
+        const outletsContainer = document.getElementById('chart-outlets');
+        if (data.outletSplits.length === 0) {
+          outletsContainer.innerHTML = '<div style="color: var(--text-muted); text-align: center; font-size: 0.85rem;">No outlet transactions recorded yet.</div>';
+        } else {
+          // Find max sales to scale bars
+          const maxSales = Math.max(...data.outletSplits.map(o => o.totalSales));
+          outletsContainer.innerHTML = data.outletSplits.map((o, idx) => {
+            const percentage = maxSales > 0 ? (o.totalSales / maxSales) * 100 : 0;
+            return `
+              <div class="bar-item">
+                <div class="bar-labels">
+                  <span>Outlet: ${o.outletId} (${o.txCount} orders)</span>
+                  <span>₹${o.totalSales.toFixed(2)}</span>
+                </div>
+                <div class="bar-track">
+                  <div class="bar-fill ${idx % 2 === 1 ? 'bar-fill-orange' : ''}" style="width: ${percentage}%"></div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+
+        // 3. Render Payment Channels Splits
+        const payContainer = document.getElementById('chart-payments');
+        const colors = { CASH: '#10b981', UPI: '#06b6d4', CARD: '#8b5cf6', OTHER: '#f97316' };
+        payContainer.innerHTML = data.paymentSplits.map(p => {
+          const color = colors[p.method] || '#9ca3af';
+          return `
+            <div class="pie-row">
+              <div class="pie-legend">
+                <span class="legend-color" style="background-color: ${color}"></span>
+                <span>${p.method} Transactions</span>
+              </div>
+              <span>₹${p.amount.toFixed(2)}</span>
+            </div>
+          `;
+        }).join('');
+
+        // 4. Render Top Items
+        const itemsContainer = document.getElementById('chart-topitems');
+        if (data.topItems.length === 0) {
+          itemsContainer.innerHTML = '<div style="color: var(--text-muted); text-align: center; font-size: 0.8rem;">No items sold yet.</div>';
+        } else {
+          const maxQty = Math.max(...data.topItems.map(i => i.quantity));
+          itemsContainer.innerHTML = data.topItems.slice(0, 3).map((item, idx) => {
+            const pct = maxQty > 0 ? (item.quantity / maxQty) * 100 : 0;
+            return `
+              <div class="bar-item">
+                <div class="bar-labels" style="font-size: 0.75rem;">
+                  <span>${item.name} (${item.quantity} units sold)</span>
+                  <span>₹${item.revenue.toFixed(2)}</span>
+                </div>
+                <div class="bar-track" style="height: 6px;">
+                  <div class="bar-fill" style="width: ${pct}%; background: linear-gradient(90deg, #a78bfa, #22d3ee);"></div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+
+      } catch (err) {
+        console.error('Error fetching statistics:', err);
+      }
+    }
+
+    // Load initial orders
+    async function loadOrdersTable() {
+      try {
+        const response = await fetch('/api/admin/orders');
+        const orders = await response.json();
+
+        const tbody = document.getElementById('telemetry-tbody');
+        if (orders.length === 0) {
+          tbody.innerHTML = '<tr><td colSpan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Waiting for incoming transactions...</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = orders.map(o => {
+          const parts = o.id.split('-');
+          const outletId = parts[0] && parts[0].startsWith('OUT') ? parts[0] : 'OUT-MAIN';
+          const dateStr = new Date(o.createdAt).toLocaleString();
+          const subtotal = o.subTotal;
+          const tax = o.tax;
+          const total = o.total;
+
+          return `
+            <tr id="row-${o.id}">
+              <td style="color: var(--text-muted);">${dateStr}</td>
+              <td style="color: var(--neon-orange); font-weight: 800;">${o.orderNumber}</td>
+              <td><span class="outlet-badge">${outletId}</span></td>
+              <td>₹${subtotal.toFixed(2)}</td>
+              <td style="color: var(--text-muted);">₹${tax.toFixed(2)}</td>
+              <td style="color: #fff; font-weight: 800;">₹${total.toFixed(2)}</td>
+              <td><span class="payment-badge">${o.paymentMethod || 'OTHER'}</span></td>
+              <td><span class="status-badge">${o.status}</span></td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Error loading orders feed:', err);
+      }
+    }
+
+    // Connect real-time web sockets updates
+    function connectSockets() {
+      // Connect socket to root URL
+      const socket = io(window.location.origin, {
+        transports: ['websocket', 'polling']
+      });
+
+      socket.on('connect', () => {
+        console.log('[Socket] Registered live telemetry dashboard feed.');
+      });
+
+      socket.on('order:updated', (orderPayload) => {
+        console.log('[Socket] Order updated payload:', orderPayload);
+        handleLiveOrderEvent(orderPayload);
+      });
+
+      socket.on('kot:new', (kotPayload) => {
+        console.log('[Socket] KOT ticket created:', kotPayload);
+      });
+    }
+
+    function handleLiveOrderEvent(o) {
+      const tbody = document.getElementById('telemetry-tbody');
+      
+      // Remove loading placeholder
+      if (tbody.innerHTML.includes('Waiting for incoming')) {
+        tbody.innerHTML = '';
+      }
+
+      // Check duplicate
+      if (document.getElementById(`row-${o.id}`)) {
+        return;
+      }
+
+      const parts = o.id.split('-');
+      const outletId = parts[0] && parts[0].startsWith('OUT') ? parts[0] : 'OUT-MAIN';
+      const dateStr = new Date(o.createdAt).toLocaleString();
+      const subtotal = o.subTotal || o.subtotal || 0;
+      const tax = o.tax || 0;
+      const total = o.total || 0;
+
+      const newRowHtml = `
+        <tr id="row-${o.id}" class="flash-highlight">
+          <td style="color: var(--text-muted);">${dateStr}</td>
+          <td style="color: var(--neon-orange); font-weight: 800;">${o.orderNumber || o.order_number}</td>
+          <td><span class="outlet-badge">${outletId}</span></td>
+          <td>₹${subtotal.toFixed(2)}</td>
+          <td style="color: var(--text-muted);">₹${tax.toFixed(2)}</td>
+          <td style="color: #fff; font-weight: 800;">₹${total.toFixed(2)}</td>
+          <td><span class="payment-badge">${o.paymentMethod || o.payment_method || 'OTHER'}</span></td>
+          <td><span class="status-badge">${o.status}</span></td>
+        </tr>
+      `;
+
+      tbody.insertAdjacentHTML('afterbegin', newRowHtml);
+
+      // Flash values and reload metrics
+      loadMetrics();
+    }
+
+    // Initialize scripts
+    window.addEventListener('DOMContentLoaded', () => {
+      loadMetrics();
+      loadOrdersTable();
+      connectSockets();
+    });
+  </script>
+</body>
+</html>
