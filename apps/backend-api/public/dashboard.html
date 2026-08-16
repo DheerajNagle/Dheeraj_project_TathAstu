@@ -54,6 +54,7 @@
       font-weight: 900;
       background: linear-gradient(135deg, #fff 30%, var(--neon-purple));
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
       letter-spacing: -0.5px;
     }
@@ -95,7 +96,7 @@
     /* Grid Layouts */
     .metrics-grid {
       display: grid;
-      grid-template-cols: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 1.5rem;
       margin-bottom: 2.5rem;
     }
@@ -135,25 +136,27 @@
     .value-highlight {
       background: linear-gradient(135deg, #fff, var(--neon-cyan));
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
     .value-orange {
       background: linear-gradient(135deg, #fff, var(--neon-orange));
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
     .charts-grid {
       display: grid;
-      grid-template-cols: 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 2rem;
       margin-bottom: 2.5rem;
     }
 
     @media (max-width: 900px) {
       .charts-grid {
-        grid-template-cols: 1fr;
+        grid-template-columns: 1fr;
       }
     }
 
