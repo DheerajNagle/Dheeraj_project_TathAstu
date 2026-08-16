@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const db = require('./db.cjs');
+const printer = require('./printer.cjs');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -36,6 +37,10 @@ app.whenReady().then(() => {
   ipcMain.handle('db:save-order', (event, order) => db.saveOrder(order));
   ipcMain.handle('db:get-sync-queue', () => db.getSyncQueue());
   ipcMain.handle('db:clear-sync-item', (event, id) => db.clearSyncItem(id));
+
+  // Print Handlers
+  ipcMain.handle('print:kot', (event, order, config) => printer.printKOT(order, config));
+  ipcMain.handle('print:bill', (event, order, config) => printer.printBill(order, config));
 
   createWindow();
 

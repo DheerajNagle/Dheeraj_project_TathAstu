@@ -48,6 +48,8 @@ interface ElectronAPI {
   saveOrder: (order: any) => Promise<{ success: boolean; orderId: string }>;
   getSyncQueue: () => Promise<any[]>;
   clearSyncItem: (id: number) => Promise<any>;
+  printKOT: (order: any, config: any) => Promise<{ success: boolean; preview: string }>;
+  printBill: (order: any, config: any) => Promise<{ success: boolean; preview: string }>;
 }
 
 declare global {
@@ -81,6 +83,14 @@ function App() {
   const [modifierItem, setModifierItem] = useState<SQLiteItem | null>(null);
   const [isModifierOpen, setIsModifierOpen] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  // Hardware/Printing Config States
+  const [printerType, setPrinterType] = useState<'MOCK' | 'TCP'>('MOCK');
+  const [printerAddress, setPrinterAddress] = useState<string>('192.168.1.100');
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [printPreview, setPrintPreview] = useState<string>('');
+  const [kotPreview, setKotPreview] = useState<string>('');
+  const [printModalTab, setPrintModalTab] = useState<'bill' | 'kot'>('bill');
 
   // Focus ref for code search box (F4 shortcut)
   const codeSearchRef = useRef<HTMLInputElement>(null);
@@ -153,7 +163,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedTable, customerName, customerPhone, discount, syncQueue]);
+  }, [cart, selectedTable, customerName, customerPhone, discount, syncQueue, printerType, printerAddress]);
 
   // Cart operations
   const handleItemClick = (item: SQLiteItem) => {
@@ -283,17 +293,33 @@ function App() {
     };
 
     try {
+      // 1. Save order to SQLite
       await window.electronAPI.saveOrder(orderPayload);
+
+      // 2. Trigger silent prints (print KOT and customer bill receipt)
+      const printConfig = { type: printerType, address: printerAddress };
+      const billPrint = await window.electronAPI.printBill(orderPayload, printConfig);
+      const kotPrint = await window.electronAPI.printKOT(orderPayload, printConfig);
+
+      // Save preview text for Virtual Printer modal
+      setPrintPreview(billPrint.preview || '');
+      setKotPreview(kotPrint.preview || '');
+      
+      // Clear cart inputs
       setCart([]);
       setSelectedTable('');
       setCustomerName('');
       setCustomerPhone('');
       setDiscount(0);
+      
       await refreshData();
-      alert(`Order ${orderNumber} billed successfully!`);
+      
+      // Show virtual receipt overlay
+      setShowPrintModal(true);
+      
     } catch (e) {
       console.error(e);
-      alert('Checkout transaction failed.');
+      alert('Checkout transaction or printing failed.');
     }
   };
 
@@ -794,6 +820,57 @@ function App() {
         </div>
       </div>
 
+      {/* Settings Dialog / Config Overlay embedded in Sync tab */}
+      {activeTab === 'sync' && (
+        <div className="w-80 bg-white border-l border-gray-200 p-6 shrink-0 space-y-6 overflow-y-auto">
+          <h3 className="font-extrabold text-gray-800 text-sm">Hardware Configuration</h3>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase">Thermal Printer Mode</label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <button
+                  onClick={() => setPrinterType('MOCK')}
+                  className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                    printerType === 'MOCK' ? 'bg-orange-500 border-orange-500 text-white shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'
+                  }`}
+                >
+                  Mock Simulator
+                </button>
+                <button
+                  onClick={() => setPrinterType('TCP')}
+                  className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                    printerType === 'TCP' ? 'bg-orange-500 border-orange-500 text-white shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'
+                  }`}
+                >
+                  Network Printer
+                </button>
+              </div>
+            </div>
+
+            {printerType === 'TCP' && (
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Printer IP Address</label>
+                <input
+                  type="text"
+                  value={printerAddress}
+                  onChange={e => setPrinterAddress(e.target.value)}
+                  placeholder="192.168.1.100"
+                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+                />
+              </div>
+            )}
+          </div>
+          
+          <div className="pt-6 border-t border-gray-100 text-xs text-gray-400 space-y-1">
+            <span className="font-bold text-gray-500 block mb-2">Thermal Print Logs Location:</span>
+            <p className="font-mono text-[10px] bg-gray-50 p-2 rounded break-all select-all">
+              %appdata%/desktop-pos/
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Dynamic Modifiers Choice Popup Modal */}
       {modifierItem && (
         <ModifierModal
@@ -806,6 +883,64 @@ function App() {
           }}
           onConfirm={addCustomizedItemToCart}
         />
+      )}
+
+      {/* Virtual Thermal Printer Simulator Screen Overlay */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+          <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] border border-gray-100">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="font-black text-gray-800 text-lg">Virtual Thermal Printer Output</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Written silently to local log files in mock mode.</p>
+              </div>
+              <button
+                onClick={() => setShowPrintModal(false)}
+                className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-500 font-bold flex items-center justify-center transition-colors text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Selector tabs for Receipt or KOT */}
+            <div className="flex border-b border-gray-100 shrink-0 bg-white px-6">
+              <button
+                onClick={() => setPrintModalTab('bill')}
+                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all ${
+                  printModalTab === 'bill' ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                📄 Customer Receipt (.log)
+              </button>
+              <button
+                onClick={() => setPrintModalTab('kot')}
+                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all ${
+                  printModalTab === 'kot' ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                🍳 Kitchen KOT (.log)
+              </button>
+            </div>
+
+            {/* Scrollable Receipt Body */}
+            <div className="flex-1 p-6 bg-gray-900 overflow-y-auto flex justify-center">
+              <pre className="font-mono text-[11px] text-green-400 text-left bg-gray-950 p-6 rounded-xl border border-gray-800 overflow-x-auto whitespace-pre h-fit w-96 leading-relaxed shadow-inner">
+                {printModalTab === 'bill' ? printPreview : kotPreview}
+              </pre>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end shrink-0">
+              <button
+                onClick={() => setShowPrintModal(false)}
+                className="px-6 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-xs font-bold rounded-xl transition-colors"
+              >
+                Close Output [Esc]
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
