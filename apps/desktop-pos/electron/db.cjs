@@ -1,0 +1,276 @@
+const Database = require('better-sqlite3');
+const path = require('path');
+const fs = require('fs');
+const { app } = require('electron');
+
+let dbPath;
+try {
+  // Production-grade location: app user data directory
+  const userDataPath = app.getPath('userData');
+  dbPath = path.join(userDataPath, 'tathastu_local.db');
+} catch (e) {
+  // Fallback for tests/dev out of Electron main process context
+  dbPath = path.join(__dirname, 'tathastu_local.db');
+}
+
+// Ensure database directory exists
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
+console.log('Initializing local SQLite database at:', dbPath);
+const db = new Database(dbPath);
+
+// Enable WAL journal mode for performance and enforce foreign keys
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+// Initialize schema
+function initSchema() {
+  db.exec(`
+    -- 1. Tables map
+    CREATE TABLE IF NOT EXISTS tables (
+      id TEXT PRIMARY KEY,
+      table_number TEXT UNIQUE NOT NULL,
+      status TEXT DEFAULT 'VACANT',
+      capacity INTEGER DEFAULT 4
+    );
+
+    -- 2. Menu Categories
+    CREATE TABLE IF NOT EXISTS categories (
+      id TEXT PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      description TEXT,
+      is_active INTEGER DEFAULT 1
+    );
+
+    -- 3. Menu Items
+    CREATE TABLE IF NOT EXISTS items (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      price REAL NOT NULL,
+      category_id TEXT NOT NULL,
+      image_url TEXT,
+      is_available INTEGER DEFAULT 1,
+      tax_rate REAL DEFAULT 0.05,
+      FOREIGN KEY (category_id) REFERENCES categories (id)
+    );
+
+    -- 4. Modifiers
+    CREATE TABLE IF NOT EXISTS modifiers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      price REAL NOT NULL,
+      item_id TEXT NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items (id) ON DELETE CASCADE
+    );
+
+    -- 5. Orders
+    CREATE TABLE IF NOT EXISTS orders (
+      id TEXT PRIMARY KEY,
+      order_number TEXT UNIQUE NOT NULL,
+      table_number TEXT,
+      customer_name TEXT,
+      customer_phone TEXT,
+      status TEXT NOT NULL,
+      source TEXT NOT NULL,
+      subtotal REAL NOT NULL,
+      tax REAL NOT NULL,
+      discount REAL DEFAULT 0.0,
+      total REAL NOT NULL,
+      payment_status TEXT NOT NULL,
+      payment_method TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    -- 6. Order Items
+    CREATE TABLE IF NOT EXISTS order_items (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL,
+      menu_item_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      price REAL NOT NULL,
+      quantity INTEGER NOT NULL,
+      notes TEXT,
+      kot_id TEXT,
+      FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
+    );
+
+    -- 7. Synchronization Queue
+    CREATE TABLE IF NOT EXISTS sync_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      error_message TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
+
+  seedMockData();
+}
+
+function seedMockData() {
+  // Seed Tables
+  const tableCount = db.prepare('SELECT COUNT(*) as count FROM tables').get();
+  if (tableCount.count === 0) {
+    console.log('Seeding mock tables...');
+    const insertTable = db.prepare('INSERT INTO tables (id, table_number, status, capacity) VALUES (?, ?, ?, ?)');
+    const tables = [
+      { id: 't1', table_number: '1', status: 'VACANT', capacity: 2 },
+      { id: 't2', table_number: '2', status: 'VACANT', capacity: 4 },
+      { id: 't3', table_number: '3', status: 'OCCUPIED', capacity: 4 },
+      { id: 't4', table_number: '4', status: 'VACANT', capacity: 6 },
+      { id: 't5', table_number: '5', status: 'VACANT', capacity: 8 },
+    ];
+    db.transaction((list) => {
+      for (const t of list) insertTable.run(t.id, t.table_number, t.status, t.capacity);
+    })(tables);
+  }
+
+  // Seed Categories and Items
+  const categoryCount = db.prepare('SELECT COUNT(*) as count FROM categories').get();
+  if (categoryCount.count === 0) {
+    console.log('Seeding mock categories and menu items...');
+    const insertCategory = db.prepare('INSERT INTO categories (id, name, description, is_active) VALUES (?, ?, ?, ?)');
+    const insertItem = db.prepare('INSERT INTO items (id, name, description, price, category_id, is_available, tax_rate) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    
+    db.transaction(() => {
+      insertCategory.run('c1', 'Appetizers', 'Starters and quick bites', 1);
+      insertCategory.run('c2', 'Main Course', 'Filling entrees', 1);
+      insertCategory.run('c3', 'Beverages', 'Refreshing beverages', 1);
+
+      insertItem.run('i1', 'Garlic Bread', 'Garlic butter toasted baguette slices', 120.0, 'c1', 1, 0.05);
+      insertItem.run('i2', 'Stuffed Mushrooms', 'Stuffed with cheese and herbs', 160.0, 'c1', 1, 0.05);
+      insertItem.run('i3', 'Paneer Butter Masala', 'Paneer cubes in creamy tomato butter sauce', 280.0, 'c2', 1, 0.05);
+      insertItem.run('i4', 'Chicken Tikka Masala', 'Grilled chicken chunks in spiced tikka gravy', 340.0, 'c2', 1, 0.05);
+      insertItem.run('i5', 'Dal Makhani', 'Slow cooked black lentils with cream', 220.0, 'c2', 1, 0.05);
+      insertItem.run('i6', 'Fresh Lime Soda', 'Salted or sweet lime soda', 70.0, 'c3', 1, 0.05);
+      insertItem.run('i7', 'Cold Brew Coffee', 'Slow dripped smooth black coffee', 110.0, 'c3', 1, 0.05);
+    })();
+  }
+}
+
+// --- Query Utilities ---
+
+function getTables() {
+  return db.prepare('SELECT * FROM tables').all();
+}
+
+function getCategories() {
+  return db.prepare('SELECT * FROM categories WHERE is_active = 1').all();
+}
+
+function getItems() {
+  return db.prepare('SELECT * FROM items WHERE is_available = 1').all();
+}
+
+function getOrders() {
+  const orders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all();
+  const selectItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?');
+  return orders.map(order => ({
+    ...order,
+    // Format db columns back to camelCase React interfaces
+    tableNumber: order.table_number,
+    customerName: order.customer_name,
+    customerPhone: order.customer_phone,
+    subTotal: order.subtotal,
+    paymentStatus: order.payment_status,
+    paymentMethod: order.payment_method,
+    items: selectItems.all(order.id).map(item => ({
+      ...item,
+      menuItemId: item.menu_item_id,
+      kotId: item.kot_id
+    }))
+  }));
+}
+
+function saveOrder(order) {
+  const insertOrder = db.prepare(`
+    INSERT OR REPLACE INTO orders (id, order_number, table_number, customer_name, customer_phone, status, source, subtotal, tax, discount, total, payment_status, payment_method, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const deleteItems = db.prepare('DELETE FROM order_items WHERE order_id = ?');
+  const insertItem = db.prepare(`
+    INSERT INTO order_items (id, order_id, menu_item_id, name, price, quantity, notes, kot_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertQueue = db.prepare(`
+    INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  db.transaction((o) => {
+    // Save order fields
+    insertOrder.run(
+      o.id,
+      o.order_number,
+      o.tableNumber || null,
+      o.customerName || null,
+      o.customerPhone || null,
+      o.status,
+      o.source,
+      o.subTotal,
+      o.tax,
+      o.discount || 0,
+      o.total,
+      o.paymentStatus,
+      o.paymentMethod || null,
+      o.createdAt,
+      o.updatedAt
+    );
+
+    // Save order items
+    deleteItems.run(o.id);
+    for (const item of o.items) {
+      insertItem.run(
+        item.id,
+        o.id,
+        item.menuItemId,
+        item.name,
+        item.price,
+        item.quantity,
+        item.notes || null,
+        item.kotId || null
+      );
+    }
+
+    // Queue for synclogging
+    insertQueue.run(
+      'ORDER',
+      o.id,
+      'CREATE',
+      JSON.stringify(o),
+      'PENDING',
+      new Date().toISOString()
+    );
+  })(order);
+
+  return { success: true, orderId: order.id };
+}
+
+function getSyncQueue() {
+  return db.prepare("SELECT * FROM sync_queue WHERE status = 'PENDING' ORDER BY created_at ASC").all();
+}
+
+function clearSyncItem(id) {
+  return db.prepare("UPDATE sync_queue SET status = 'SYNCED' WHERE id = ?").run(id);
+}
+
+module.exports = {
+  initSchema,
+  getTables,
+  getCategories,
+  getItems,
+  getOrders,
+  saveOrder,
+  getSyncQueue,
+  clearSyncItem
+};

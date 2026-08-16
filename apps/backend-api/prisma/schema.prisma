@@ -1,0 +1,101 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Category {
+  id          String     @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  menuItems   MenuItem[]
+}
+
+model MenuItem {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  price       Float
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  imageUrl    String?
+  isAvailable Boolean  @default(true)
+  taxRate     Float    @default(0.05)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Order {
+  id            String      @id @default(uuid())
+  orderNumber   String      @unique
+  tableNumber   String?
+  customerName  String?
+  customerPhone String?
+  status        String      // PENDING, PREPARING, READY, SERVED, COMPLETED, CANCELLED
+  source        String      // DINE_IN, TAKEAWAY, DELIVERY
+  subTotal      Float
+  tax           Float
+  discount      Float
+  total         Float
+  paymentStatus String      // UNPAID, PAID, PARTIALLY_PAID, REFUNDED
+  paymentMethod String?     // CASH, CARD, UPI, OTHER
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  items         OrderItem[]
+  kots          KOT[]
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  name       String
+  price      Float
+  quantity   Int
+  notes      String?
+  kotId      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model KOT {
+  id          String    @id @default(uuid())
+  orderId     String
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  kotNumber   String
+  tableNumber String?
+  status      String    // PENDING, PREPARING, READY, SERVED, CANCELLED
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  items       KOTItem[]
+}
+
+model KOTItem {
+  id         String   @id @default(uuid())
+  kotId      String
+  kot        KOT      @relation(fields: [kotId], references: [id], onDelete: Cascade)
+  menuItemId String
+  name       String
+  quantity   Int
+  notes      String?
+  status     String    // PENDING, PREPARING, READY, SERVED, CANCELLED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model SyncLog {
+  id         String   @id @default(uuid())
+  posId      String
+  entityType String   // ORDER, KOT, MENU_ITEM, CATEGORY
+  entityId   String
+  action     String   // CREATE, UPDATE, DELETE
+  payload    Json
+  createdAt  DateTime @default(now())
+}
