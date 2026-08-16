@@ -178,7 +178,7 @@ function App() {
   const [newDishName, setNewDishName] = useState<string>('');
   const [newDishPrice, setNewDishPrice] = useState<number | ''>('');
   const [newDishCode, setNewDishCode] = useState<string>('');
-  const [newDishCategory, setNewDishCategory] = useState<string>('cat-1');
+  const [newDishCategory, setNewDishCategory] = useState<string>('');
   const [isAddingDish, setIsAddingDish] = useState<boolean>(false);
 
   const handleAddDishSubmit = async (e: React.FormEvent) => {
@@ -255,6 +255,9 @@ function App() {
       setSyncQueue(qList);
       setIngredients(ingList);
       setActiveShift(shiftData);
+      if (cList.length > 0 && !newDishCategory) {
+        setNewDishCategory(cList[0].id);
+      }
       if (paySettings) {
         setUpiSettingsVpa(paySettings.vpa_id);
         setUpiSettingsName(paySettings.merchant_name);

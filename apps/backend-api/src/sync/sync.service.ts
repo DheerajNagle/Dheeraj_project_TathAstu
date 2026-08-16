@@ -124,6 +124,29 @@ export class SyncService implements OnModuleInit {
           }
 
           succeededIds.push(item.id);
+        } else if (item.entity_type === 'ITEM') {
+          const itemData = JSON.parse(item.payload);
+          
+          await this.prisma.menuItem.upsert({
+            where: { id: itemData.id },
+            update: {
+              name: itemData.name,
+              price: itemData.price,
+              categoryId: itemData.categoryId,
+              isAvailable: true
+            },
+            create: {
+              id: itemData.id,
+              name: itemData.name,
+              price: itemData.price,
+              categoryId: itemData.categoryId,
+              isAvailable: true,
+              taxRate: 0.05
+            }
+          });
+
+          console.log(`[Sync Engine] Synced menu item ${itemData.name} (ID: ${itemData.id}) to PostgreSQL.`);
+          succeededIds.push(item.id);
         }
       } catch (e) {
         console.error(`[Sync Engine] Failed to sync item ${item.id}:`, e.message);

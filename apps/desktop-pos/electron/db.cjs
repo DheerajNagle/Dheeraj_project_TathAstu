@@ -560,10 +560,18 @@ function savePaymentSettings(vpaId, merchantName, enableDynamicUpi) {
 function addMenuItem(name, price, categoryId, code) {
   const itemId = `item-${Date.now()}`;
   db.prepare("INSERT INTO items (id, name, price, category_id, code) VALUES (?, ?, ?, ?, ?)")
-    .run(itemId, name, Number(price), categoryId || 'cat-1', code);
+    .run(itemId, name, Number(price), categoryId || 'c1', code);
 
-  db.prepare("INSERT INTO sync_queue (entity_type, entity_id, action, status, created_at) VALUES (?, ?, ?, ?, ?)")
-    .run('ITEM', itemId, 'INSERT', 'PENDING', new Date().toISOString());
+  const payloadJson = JSON.stringify({
+    id: itemId,
+    name,
+    price: Number(price),
+    categoryId: categoryId || 'c1',
+    code
+  });
+
+  db.prepare("INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+    .run('ITEM', itemId, 'INSERT', payloadJson, 'PENDING', new Date().toISOString());
 
   return { success: true, id: itemId };
 }
