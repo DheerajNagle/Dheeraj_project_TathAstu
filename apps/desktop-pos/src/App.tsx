@@ -55,6 +55,27 @@ interface KDSTicket {
   }>;
 }
 
+interface SQLiteIngredient {
+  id: string;
+  name: string;
+  stock_qty: number;
+  unit: string;
+}
+
+interface SQLiteShift {
+  id: string;
+  cashier_name: string;
+  status: string;
+  opening_balance: number;
+  closing_balance: number | null;
+  opening_time: string;
+  closing_time: string | null;
+  total_cash_sales: number;
+  total_upi_sales: number;
+  total_card_sales: number;
+  drawer_difference: number | null;
+}
+
 interface ElectronAPI {
   platform: string;
   ping: () => string;
@@ -68,6 +89,10 @@ interface ElectronAPI {
   printKOT: (order: any, config: any) => Promise<{ success: boolean; preview: string }>;
   printBill: (order: any, config: any) => Promise<{ success: boolean; preview: string }>;
   triggerSync: () => Promise<any[]>;
+  getIngredients: () => Promise<SQLiteIngredient[]>;
+  getActiveShift: () => Promise<SQLiteShift | null>;
+  startShift: (cashierName: string, openingBalance: number) => Promise<SQLiteShift>;
+  endShift: (shiftId: string, actualDrawerCash: number) => Promise<{ shift: SQLiteShift; reportText: string }>;
 }
 
 declare global {
@@ -83,6 +108,8 @@ function App() {
   const [items, setItems] = useState<SQLiteItem[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [syncQueue, setSyncQueue] = useState<any[]>([]);
+  const [ingredients, setIngredients] = useState<SQLiteIngredient[]>([]);
+  const [activeShift, setActiveShift] = useState<SQLiteShift | null>(null);
 
   // Cart & POS UI States
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -90,13 +117,20 @@ function App() {
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState<'pos' | 'tables' | 'kds' | 'orders' | 'sync'>('pos');
+  const [activeTab, setActiveTab] = useState<'pos' | 'tables' | 'kds' | 'business' | 'orders' | 'sync'>('pos');
   
   // Custom inputs
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [codeQuery, setCodeQuery] = useState<string>('');
   const [discount, setDiscount] = useState<number>(0);
   
+  // Shift controls inputs
+  const [openingCashierName, setOpeningCashierName] = useState<string>('');
+  const [openingCashBalance, setOpeningCashBalance] = useState<number>(1000);
+  const [actualCashDrawer, setActualCashDrawer] = useState<number>(0);
+  const [zReportText, setZReportText] = useState<string>('');
+  const [showZReportModal, setShowZReportModal] = useState<boolean>(false);
+
   // Modifiers
   const [modifierItem, setModifierItem] = useState<SQLiteItem | null>(null);
   const [isModifierOpen, setIsModifierOpen] = useState<boolean>(false);
@@ -121,18 +155,25 @@ function App() {
   const refreshData = async () => {
     try {
       const api = window.electronAPI;
-      const [tList, cList, iList, oList, qList] = await Promise.all([
+      const [tList, cList, iList, oList, qList, ingList, shiftData] = await Promise.all([
         api.getTables(),
         api.getCategories(),
         api.getItems(),
         api.getOrders(),
-        api.getSyncQueue()
+        api.getSyncQueue(),
+        api.getIngredients(),
+        api.getActiveShift()
       ]);
       setTables(tList);
       setCategories(cList);
       setItems(iList);
       setOrders(oList);
       setSyncQueue(qList);
+      setIngredients(ingList);
+      setActiveShift(shiftData);
+      if (shiftData) {
+        setActualCashDrawer(shiftData.opening_balance + shiftData.total_cash_sales);
+      }
     } catch (e) {
       console.error('Error fetching SQLite data:', e);
     }
@@ -164,7 +205,6 @@ function App() {
 
     socket.on('kot:new', (ticket: KDSTicket) => {
       console.log('[KDS Socket] Received new Kitchen ticket:', ticket);
-      // Avoid duplicate tickets
       setKdsTickets(prev => {
         if (prev.some(t => t.id === ticket.id)) return prev;
         return [...prev, ticket];
@@ -219,7 +259,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedTable, customerName, customerPhone, discount, syncQueue, printerType, printerAddress]);
+  }, [cart, selectedTable, customerName, customerPhone, discount, syncQueue, printerType, printerAddress, activeShift]);
 
   // Cart operations
   const handleItemClick = (item: SQLiteItem) => {
@@ -233,13 +273,10 @@ function App() {
     const extrasPrice = selection.extras.reduce((sum, e) => sum + e.price, 0);
     const combinedPrice = modifierItem.price + extrasPrice;
     
-    // Construct modifier detail string
     const modifierText = selection.extras.length > 0 
       ? selection.extras.map(e => e.name).join(', ')
       : '';
     const customizationName = `${modifierItem.name} (${selection.spiceLevel})${modifierText ? ` + [${modifierText}]` : ''}`;
-    
-    // Unique ID based on MenuItem + customization specifics to distinguish separate cart rows
     const uniqueCustId = `${modifierItem.id}-${selection.spiceLevel}-${selection.extras.map(e => e.id).sort().join('_')}`;
 
     setCart(prev => {
@@ -293,8 +330,6 @@ function App() {
   // GST splits calculations (Indian tax engine)
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const discountedSubtotal = Math.max(0, cartSubtotal - discount);
-  
-  // Split GST: 5% total tax rate -> 2.5% CGST + 2.5% SGST
   const cgst = discountedSubtotal * 0.025;
   const sgst = discountedSubtotal * 0.025;
   const cartTotal = discountedSubtotal + cgst + sgst;
@@ -316,6 +351,13 @@ function App() {
 
   const handleCheckout = async (paymentMethod: 'CASH' | 'UPI' | 'CARD') => {
     if (cart.length === 0) return;
+
+    // Shift check: block sales if shift is not started
+    if (!activeShift) {
+      alert('Error: Please start a cashier shift in the Business tab before billing orders.');
+      setActiveTab('business');
+      return;
+    }
 
     const orderId = generateCompositeOrderId();
     const orderNumber = generateOrderNumber();
@@ -349,7 +391,7 @@ function App() {
     };
 
     try {
-      // 1. Save order to local SQLite
+      // 1. Save order to local SQLite (updates shifts totals and deducts stock)
       await window.electronAPI.saveOrder(orderPayload);
 
       // 2. Trigger silent prints (print KOT and customer bill receipt)
@@ -376,6 +418,44 @@ function App() {
     } catch (e) {
       console.error(e);
       alert('Checkout transaction or printing failed.');
+    }
+  };
+
+  // Shift control operations
+  const handleStartShiftSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!openingCashierName.trim()) {
+      alert('Please enter cashier name.');
+      return;
+    }
+    try {
+      const shift = await window.electronAPI.startShift(openingCashierName, openingCashBalance);
+      setActiveShift(shift);
+      setActualCashDrawer(shift.opening_balance);
+      setOpeningCashierName('');
+      alert(`Shift started for cashier: ${shift.cashier_name}`);
+      await refreshData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleEndShiftSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeShift) return;
+
+    if (!confirm('Are you sure you want to end this shift and close the cash drawer? This will generate the Z-Report.')) return;
+
+    try {
+      const res = await window.electronAPI.endShift(activeShift.id, actualCashDrawer);
+      if (res) {
+        setZReportText(res.reportText);
+        setShowZReportModal(true);
+        setActiveShift(null);
+        await refreshData();
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -451,6 +531,18 @@ function App() {
               )}
             </button>
             <button
+              onClick={() => setActiveTab('business')}
+              className={`p-3 rounded-2xl flex flex-col items-center gap-1 transition-all relative ${
+                activeTab === 'business' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:bg-gray-900 hover:text-white'
+              }`}
+            >
+              <span className="text-xl">📊</span>
+              <span className="text-[9px] font-bold">Business</span>
+              {ingredients.some(i => i.stock_qty < 200) && (
+                <span className="absolute top-1 right-2 w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('orders')}
               className={`p-3 rounded-2xl flex flex-col items-center gap-1 transition-all ${
                 activeTab === 'orders' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-500 hover:bg-gray-900 hover:text-white'
@@ -485,7 +577,7 @@ function App() {
           <div className="flex items-center gap-4">
             <h2 className="text-base font-extrabold text-gray-800 tracking-tight">TathAstu POS Billing</h2>
             <div className="px-2.5 py-0.5 rounded-full text-[9px] font-black bg-orange-50 text-orange-700 border border-orange-200 uppercase tracking-wide">
-              Outlet Terminal 01
+              {activeShift ? `Active Cashier: ${activeShift.cashier_name}` : 'Shift Closed'}
             </div>
           </div>
 
@@ -799,7 +891,6 @@ function App() {
                         key={ticket.id}
                         className="bg-white rounded-2xl border-2 border-orange-100 overflow-hidden shadow-sm flex flex-col justify-between"
                       >
-                        {/* Header */}
                         <div className="p-4 bg-orange-50/50 border-b border-orange-100 flex justify-between items-center">
                           <div>
                             <span className="text-xs font-black text-orange-600 block">
@@ -814,7 +905,6 @@ function App() {
                           </span>
                         </div>
 
-                        {/* Items list */}
                         <div className="p-5 flex-1 space-y-3">
                           {ticket.items.map(item => (
                             <div key={item.id} className="text-xs font-medium text-gray-700">
@@ -831,7 +921,6 @@ function App() {
                           ))}
                         </div>
 
-                        {/* Action footer */}
                         <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
                           <button
                             onClick={() => handleKDSComplete(ticket.id)}
@@ -848,7 +937,173 @@ function App() {
             </div>
           )}
 
-          {/* 4. Orders History tab */}
+          {/* 4. Business Tab (Cashier Shifts & BOM Recipe Inventory) */}
+          {activeTab === 'business' && (
+            <div className="flex-1 p-8 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
+              
+              {/* Shift Management panel */}
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-extrabold text-gray-800">Cashier Shifts</h3>
+                  <p className="text-xs text-gray-400 mt-1">Manage drawer accountability, audit opening floats, and close shifts.</p>
+                </div>
+
+                {!activeShift ? (
+                  /* Shift opening view */
+                  <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🔒</span>
+                      <span className="font-extrabold text-gray-800 text-sm">Register Closed</span>
+                    </div>
+                    
+                    <form onSubmit={handleStartShiftSubmit} className="space-y-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase block">Cashier Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. John Doe"
+                          value={openingCashierName}
+                          onChange={e => setOpeningCashierName(e.target.value)}
+                          className="w-full mt-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase block">Opening Cash Balance (Float)</label>
+                        <input
+                          type="number"
+                          required
+                          value={openingCashBalance}
+                          onChange={e => setOpeningCashBalance(parseFloat(e.target.value) || 0)}
+                          className="w-full mt-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-extrabold rounded-xl transition-all shadow-md shadow-orange-500/10"
+                      >
+                        Open Cash Drawer & Start Shift
+                      </button>
+                    </form>
+                  </div>
+                ) : (
+                  /* Active Shift dashboard & closing audit form */
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col justify-between">
+                    <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                      <div>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-black bg-green-50 text-green-700 border border-green-200 uppercase tracking-wide">
+                          Shift Active
+                        </span>
+                        <h4 className="font-extrabold text-gray-800 text-sm mt-1">{activeShift.cashier_name}</h4>
+                        <span className="text-[10px] text-gray-400 font-bold block mt-0.5">
+                          Started: {new Date(activeShift.opening_time).toLocaleString()}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono text-gray-400 font-bold">{activeShift.id.slice(0, 12)}</span>
+                    </div>
+
+                    <div className="p-6 space-y-4">
+                      {/* Split cash summary */}
+                      <div className="grid grid-cols-2 gap-4 text-xs font-bold">
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                          <span className="text-[9px] text-gray-400 uppercase block">Opening Cash Float</span>
+                          <span className="text-sm font-extrabold text-gray-700">₹{activeShift.opening_balance.toFixed(2)}</span>
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                          <span className="text-[9px] text-gray-400 uppercase block">Cash Sales</span>
+                          <span className="text-sm font-extrabold text-green-600">₹{activeShift.total_cash_sales.toFixed(2)}</span>
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                          <span className="text-[9px] text-gray-400 uppercase block">UPI Sales</span>
+                          <span className="text-sm font-extrabold text-blue-600">₹{activeShift.total_upi_sales.toFixed(2)}</span>
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                          <span className="text-[9px] text-gray-400 uppercase block">Card Sales</span>
+                          <span className="text-sm font-extrabold text-purple-600">₹{activeShift.total_card_sales.toFixed(2)}</span>
+                        </div>
+                      </div>
+
+                      {/* Expected drawer cash */}
+                      <div className="border-t border-dashed border-gray-200 pt-4 flex justify-between items-center">
+                        <div>
+                          <span className="text-[10px] text-gray-400 font-bold uppercase block">Expected Drawer Cash</span>
+                          <span className="text-xs text-gray-400 font-semibold">(Float + Cash Sales)</span>
+                        </div>
+                        <span className="text-xl font-black text-gray-800">
+                          ₹{(activeShift.opening_balance + activeShift.total_cash_sales).toFixed(2)}
+                        </span>
+                      </div>
+
+                      {/* Drawer close audit form */}
+                      <form onSubmit={handleEndShiftSubmit} className="pt-4 border-t border-gray-100 space-y-4">
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-400 uppercase block">Actual Drawer Cash Counted</label>
+                          <input
+                            type="number"
+                            required
+                            value={actualCashDrawer}
+                            onChange={e => setActualCashDrawer(parseFloat(e.target.value) || 0)}
+                            className="w-full mt-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-orange-500"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold rounded-xl transition-all shadow-md shadow-red-500/10"
+                        >
+                          Perform Audit & End Shift
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Raw ingredients BOM Inventory stock panel */}
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-extrabold text-gray-800">BOM Inventory Stocks</h3>
+                  <p className="text-xs text-gray-400 mt-1">Real-time raw ingredient tracking. Stock decrements automatically on order checkout.</p>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-400 uppercase">
+                        <th className="p-4">Ingredient</th>
+                        <th className="p-4 text-right">Available Stock</th>
+                        <th className="p-4">Unit</th>
+                        <th className="p-4 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ingredients.map(ing => {
+                        const isLow = ing.stock_qty < 200;
+                        return (
+                          <tr key={ing.id} className="border-b border-gray-100 font-medium hover:bg-gray-50">
+                            <td className="p-4 font-bold text-gray-700">{ing.name}</td>
+                            <td className={`p-4 text-right font-black ${isLow ? 'text-red-500 font-black' : 'text-gray-800'}`}>
+                              {ing.stock_qty.toFixed(2)}
+                            </td>
+                            <td className="p-4 text-xs font-bold text-gray-400">{ing.unit}</td>
+                            <td className="p-4 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-black border ${
+                                isLow ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' : 'bg-green-50 text-green-700 border-green-200'
+                              }`}>
+                                {isLow ? 'LOW STOCK' : 'ADEQUATE'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* 5. Orders History tab */}
           {activeTab === 'orders' && (
             <div className="flex-1 p-8 overflow-y-auto space-y-6">
               <h3 className="text-xl font-extrabold text-gray-800">Offline Billing Logs</h3>
@@ -901,7 +1156,7 @@ function App() {
             </div>
           )}
 
-          {/* 5. Sync status log tab */}
+          {/* 6. Sync status log tab */}
           {activeTab === 'sync' && (
             <div className="flex-1 p-8 overflow-y-auto space-y-6">
               <div className="flex justify-between items-center">
@@ -1036,7 +1291,6 @@ function App() {
       {showPrintModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
           <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col h-[600px] border border-gray-100">
-            {/* Header */}
             <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
               <div>
                 <h3 className="font-black text-gray-800 text-lg">Virtual Thermal Printer Output</h3>
@@ -1050,7 +1304,6 @@ function App() {
               </button>
             </div>
 
-            {/* Selector tabs for Receipt or KOT */}
             <div className="flex border-b border-gray-100 shrink-0 bg-white px-6">
               <button
                 onClick={() => setPrintModalTab('bill')}
@@ -1070,14 +1323,12 @@ function App() {
               </button>
             </div>
 
-            {/* Scrollable Receipt Body */}
             <div className="flex-1 p-6 bg-gray-900 overflow-y-auto flex justify-center">
               <pre className="font-mono text-[11px] text-green-400 text-left bg-gray-950 p-6 rounded-xl border border-gray-800 overflow-x-auto whitespace-pre h-fit w-96 leading-relaxed shadow-inner">
                 {printModalTab === 'bill' ? printPreview : kotPreview}
               </pre>
             </div>
 
-            {/* Footer */}
             <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end shrink-0">
               <button
                 onClick={() => setShowPrintModal(false)}
@@ -1089,6 +1340,42 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Shift Z-Report Simulator Popup modal */}
+      {showZReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-6">
+          <div className="bg-white rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col h-[550px] border border-gray-100">
+            <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="font-black text-gray-800 text-lg">Cashier Shift Closed</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Z-Report printed and stored in local log directory.</p>
+              </div>
+              <button
+                onClick={() => setShowZReportModal(false)}
+                className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-500 font-bold flex items-center justify-center transition-colors text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 p-6 bg-gray-900 overflow-y-auto flex justify-center">
+              <pre className="font-mono text-[11px] text-green-400 text-left bg-gray-950 p-6 rounded-xl border border-gray-800 overflow-x-auto whitespace-pre h-fit w-96 leading-relaxed shadow-inner">
+                {zReportText}
+              </pre>
+            </div>
+
+            <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end shrink-0">
+              <button
+                onClick={() => setShowZReportModal(false)}
+                className="px-6 py-2.5 bg-gray-950 hover:bg-gray-900 text-white text-xs font-bold rounded-xl transition-colors"
+              >
+                Dismiss & Open Drawer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

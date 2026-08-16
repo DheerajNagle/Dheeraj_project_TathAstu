@@ -19,5 +19,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   printBill: (order, config) => ipcRenderer.invoke('print:bill', order, config),
 
   // Sync API
-  triggerSync: () => ipcRenderer.invoke('sync:trigger')
+  triggerSync: () => ipcRenderer.invoke('sync:trigger'),
+
+  // Shift & Inventory API
+  getIngredients: () => ipcRenderer.invoke('db:get-ingredients'),
+  getActiveShift: () => ipcRenderer.invoke('db:get-active-shift'),
+  startShift: (cashierName, openingBalance) => ipcRenderer.invoke('db:start-shift', cashierName, openingBalance),
+  endShift: (shiftId, actualDrawerCash) => ipcRenderer.invoke('db:end-shift', shiftId, actualDrawerCash)
 });

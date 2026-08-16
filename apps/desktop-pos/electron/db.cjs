@@ -28,19 +28,19 @@ db.pragma('foreign_keys = ON');
 
 // Initialize schema
 function initSchema() {
-  // Migration check: check if 'code' column exists in 'items' table
+  // Migration check: check if 'ingredients' table exists in SQLite
   let needsMigration = false;
   try {
-    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='items'").get();
-    if (tableExists) {
-      db.prepare('SELECT code FROM items LIMIT 1').get();
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ingredients'").get();
+    if (!tableExists) {
+      needsMigration = true;
     }
   } catch (e) {
-    console.log('Database schema outdated (missing code column). Migrating...');
     needsMigration = true;
   }
 
   if (needsMigration) {
+    console.log('Ingredients table missing. Wiping and recreating tables...');
     db.exec(`
       DROP TABLE IF EXISTS modifiers;
       DROP TABLE IF EXISTS order_items;
@@ -49,6 +49,9 @@ function initSchema() {
       DROP TABLE IF EXISTS tables;
       DROP TABLE IF EXISTS orders;
       DROP TABLE IF EXISTS sync_queue;
+      DROP TABLE IF EXISTS recipes;
+      DROP TABLE IF EXISTS ingredients;
+      DROP TABLE IF EXISTS shifts;
     `);
   }
 
@@ -135,6 +138,39 @@ function initSchema() {
       error_message TEXT,
       created_at TEXT NOT NULL
     );
+
+    -- 8. Raw Inventory Ingredients
+    CREATE TABLE IF NOT EXISTS ingredients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      stock_qty REAL NOT NULL,
+      unit TEXT NOT NULL
+    );
+
+    -- 9. BOM Recipe Mappings
+    CREATE TABLE IF NOT EXISTS recipes (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL,
+      ingredient_id TEXT NOT NULL,
+      quantity_required REAL NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES items (id) ON DELETE CASCADE,
+      FOREIGN KEY (ingredient_id) REFERENCES ingredients (id) ON DELETE CASCADE
+    );
+
+    -- 10. Cashier Shifts
+    CREATE TABLE IF NOT EXISTS shifts (
+      id TEXT PRIMARY KEY,
+      cashier_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      opening_balance REAL NOT NULL,
+      closing_balance REAL,
+      opening_time TEXT NOT NULL,
+      closing_time TEXT,
+      total_cash_sales REAL DEFAULT 0,
+      total_upi_sales REAL DEFAULT 0,
+      total_card_sales REAL DEFAULT 0,
+      drawer_difference REAL
+    );
   `);
 
   seedMockData();
@@ -177,6 +213,46 @@ function seedMockData() {
       insertItem.run('i5', '203', 'Dal Makhani', 'Slow cooked black lentils with cream', 220.0, 'c2', 1, 0.05);
       insertItem.run('i6', '301', 'Fresh Lime Soda', 'Salted or sweet lime soda', 70.0, 'c3', 1, 0.05);
       insertItem.run('i7', '302', 'Cold Brew Coffee', 'Slow dripped smooth black coffee', 110.0, 'c3', 1, 0.05);
+    })();
+  }
+
+  // Seed Ingredients and BOM Recipes
+  const ingredientCount = db.prepare('SELECT COUNT(*) as count FROM ingredients').get();
+  if (ingredientCount.count === 0) {
+    console.log('Seeding mock raw ingredients and BOM recipes...');
+    const insertIng = db.prepare('INSERT INTO ingredients (id, name, stock_qty, unit) VALUES (?, ?, ?, ?)');
+    const insertRec = db.prepare('INSERT INTO recipes (id, item_id, ingredient_id, quantity_required) VALUES (?, ?, ?, ?)');
+
+    db.transaction(() => {
+      insertIng.run('ing_flour', 'Flour', 5000.0, 'g');
+      insertIng.run('ing_cheese', 'Cheese', 3000.0, 'g');
+      insertIng.run('ing_butter', 'Butter', 2000.0, 'g');
+      insertIng.run('ing_paneer', 'Paneer', 4000.0, 'g');
+      insertIng.run('ing_chicken', 'Chicken', 4000.0, 'g');
+      insertIng.run('ing_coffee', 'Coffee Beans', 2000.0, 'g');
+      insertIng.run('ing_lemon', 'Lemon Juice', 1000.0, 'ml');
+
+      // Garlic Bread -> 50g Flour, 20g Cheese, 10g Butter
+      insertRec.run('rec1', 'i1', 'ing_flour', 50.0);
+      insertRec.run('rec2', 'i1', 'ing_cheese', 20.0);
+      insertRec.run('rec3', 'i1', 'ing_butter', 10.0);
+
+      // Stuffed Mushrooms -> 30g Cheese
+      insertRec.run('rec4', 'i2', 'ing_cheese', 30.0);
+
+      // Paneer Butter Masala -> 100g Paneer, 20g Butter
+      insertRec.run('rec5', 'i3', 'ing_paneer', 100.0);
+      insertRec.run('rec6', 'i3', 'ing_butter', 20.0);
+
+      // Chicken Tikka Masala -> 120g Chicken, 20g Butter
+      insertRec.run('rec7', 'i4', 'ing_chicken', 120.0);
+      insertRec.run('rec8', 'i4', 'ing_butter', 20.0);
+
+      // Fresh Lime Soda -> 30ml Lemon Juice
+      insertRec.run('rec9', 'i6', 'ing_lemon', 30.0);
+
+      // Cold Brew Coffee -> 20g Coffee Beans
+      insertRec.run('rec10', 'i7', 'ing_coffee', 20.0);
     })();
   }
 }
@@ -267,6 +343,29 @@ function saveOrder(order) {
       );
     }
 
+    // Shift integration: if active shift exists, update shift sales totals
+    const activeShift = db.prepare("SELECT * FROM shifts WHERE status = 'ACTIVE'").get();
+    if (activeShift) {
+      if (o.paymentMethod === 'CASH') {
+        db.prepare("UPDATE shifts SET total_cash_sales = total_cash_sales + ? WHERE id = ?").run(o.total, activeShift.id);
+      } else if (o.paymentMethod === 'UPI') {
+        db.prepare("UPDATE shifts SET total_upi_sales = total_upi_sales + ? WHERE id = ?").run(o.total, activeShift.id);
+      } else if (o.paymentMethod === 'CARD') {
+        db.prepare("UPDATE shifts SET total_card_sales = total_card_sales + ? WHERE id = ?").run(o.total, activeShift.id);
+      }
+    }
+
+    // BOM Stock deduction
+    const selectRecipe = db.prepare("SELECT * FROM recipes WHERE item_id = ?");
+    const deductStock = db.prepare("UPDATE ingredients SET stock_qty = stock_qty - ? WHERE id = ?");
+
+    for (const item of o.items) {
+      const recipeRows = selectRecipe.all(item.menuItemId);
+      for (const recipe of recipeRows) {
+        deductStock.run(recipe.quantity_required * item.quantity, recipe.ingredient_id);
+      }
+    }
+
     // Queue for synclogging
     insertQueue.run(
       'ORDER',
@@ -325,6 +424,44 @@ function mergeCatalog(categories, items) {
   })();
 }
 
+function getIngredients() {
+  return db.prepare('SELECT * FROM ingredients ORDER BY name ASC').all();
+}
+
+function getActiveShift() {
+  return db.prepare("SELECT * FROM shifts WHERE status = 'ACTIVE'").get();
+}
+
+function startShift(cashierName, openingBalance) {
+  db.prepare("UPDATE shifts SET status = 'CLOSED', closing_time = ? WHERE status = 'ACTIVE'").run(new Date().toISOString());
+
+  const shiftId = 'SHIFT-' + Date.now();
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO shifts (id, cashier_name, status, opening_balance, opening_time, total_cash_sales, total_upi_sales, total_card_sales)
+    VALUES (?, ?, 'ACTIVE', ?, ?, 0, 0, 0)
+  `).run(shiftId, cashierName, openingBalance, now);
+
+  return getActiveShift();
+}
+
+function endShift(shiftId, actualDrawerCash) {
+  const shift = db.prepare("SELECT * FROM shifts WHERE id = ?").get();
+  if (!shift) return { success: false, error: 'Shift not found' };
+
+  const expectedDrawerCash = shift.opening_balance + shift.total_cash_sales;
+  const difference = actualDrawerCash - expectedDrawerCash;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE shifts
+    SET status = 'CLOSED', closing_balance = ?, closing_time = ?, drawer_difference = ?
+    WHERE id = ?
+  `).run(actualDrawerCash, now, difference, shiftId);
+
+  return db.prepare("SELECT * FROM shifts WHERE id = ?").get();
+}
+
 module.exports = {
   initSchema,
   getTables,
@@ -334,5 +471,9 @@ module.exports = {
   saveOrder,
   getSyncQueue,
   clearSyncItem,
-  mergeCatalog
+  mergeCatalog,
+  getIngredients,
+  getActiveShift,
+  startShift,
+  endShift
 };

@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const db = require('./db.cjs');
 const printer = require('./printer.cjs');
 
@@ -47,6 +48,60 @@ app.whenReady().then(() => {
     await runUpstreamSync();
     await runDownstreamSync();
     return db.getSyncQueue();
+  });
+
+  // Shifts & Ingredients Handlers
+  ipcMain.handle('db:get-ingredients', () => db.getIngredients());
+  ipcMain.handle('db:get-active-shift', () => db.getActiveShift());
+  ipcMain.handle('db:start-shift', (event, cashierName, openingBalance) => db.startShift(cashierName, openingBalance));
+  ipcMain.handle('db:end-shift', async (event, shiftId, actualDrawerCash) => {
+    const updatedShift = db.endShift(shiftId, actualDrawerCash);
+    if (!updatedShift) return null;
+
+    // Generate Z-Report Layout
+    let z = '';
+    z += `========================================\n`;
+    z += `            SHIFT Z-REPORT              \n`;
+    z += `========================================\n`;
+    z += `Shift ID:     ${updatedShift.id}\n`;
+    z += `Cashier:      ${updatedShift.cashier_name}\n`;
+    z += `Open Time:    ${new Date(updatedShift.opening_time).toLocaleString()}\n`;
+    z += `Close Time:   ${new Date(updatedShift.closing_time).toLocaleString()}\n`;
+    z += `----------------------------------------\n`;
+    z += `Opening Balance (Float):   ₹${updatedShift.opening_balance.toFixed(2).padStart(11)}\n`;
+    z += `----------------------------------------\n`;
+    z += `SALES ACCOUNTABILITY:\n`;
+    z += `  Cash Sales:              ₹${updatedShift.total_cash_sales.toFixed(2).padStart(11)}\n`;
+    z += `  UPI Sales:               ₹${updatedShift.total_upi_sales.toFixed(2).padStart(11)}\n`;
+    z += `  Card Sales:              ₹${updatedShift.total_card_sales.toFixed(2).padStart(11)}\n`;
+    
+    const totalSales = updatedShift.total_cash_sales + updatedShift.total_upi_sales + updatedShift.total_card_sales;
+    z += `  Total Net Sales:         ₹${totalSales.toFixed(2).padStart(11)}\n`;
+    z += `----------------------------------------\n`;
+    
+    const expectedDrawerCash = updatedShift.opening_balance + updatedShift.total_cash_sales;
+    z += `DRAWER AUDIT:\n`;
+    z += `  Expected Cash in Drawer: ...  ₹${expectedDrawerCash.toFixed(2).padStart(11)}\n`;
+    z += `  Actual Cash in Drawer:        ₹${updatedShift.closing_balance.toFixed(2).padStart(11)}\n`;
+    z += `  Drawer Difference:            ₹${updatedShift.drawer_difference.toFixed(2).padStart(11)}\n`;
+    z += `----------------------------------------\n`;
+    
+    const diff = updatedShift.drawer_difference;
+    const statusText = diff === 0 ? 'BALANCED' : (diff > 0 ? 'OVERAGE' : 'SHORTAGE');
+    z += `Drawer Status: ${statusText}\n`;
+    z += `========================================\n`;
+
+    // Save Z-Report to a file
+    try {
+      const logDir = app.getPath('userData');
+      const zReportPath = path.join(logDir, `z_report_${shiftId}.log`);
+      fs.writeFileSync(zReportPath, z, 'utf-8');
+      console.log(`[Shift Manager] Z-Report written to ${zReportPath}`);
+    } catch (e) {
+      console.error('Failed to write Z-Report file:', e);
+    }
+
+    return { shift: updatedShift, reportText: z };
   });
 
   startSyncWorker();
