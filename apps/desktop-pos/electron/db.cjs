@@ -28,6 +28,30 @@ db.pragma('foreign_keys = ON');
 
 // Initialize schema
 function initSchema() {
+  // Migration check: check if 'code' column exists in 'items' table
+  let needsMigration = false;
+  try {
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='items'").get();
+    if (tableExists) {
+      db.prepare('SELECT code FROM items LIMIT 1').get();
+    }
+  } catch (e) {
+    console.log('Database schema outdated (missing code column). Migrating...');
+    needsMigration = true;
+  }
+
+  if (needsMigration) {
+    db.exec(`
+      DROP TABLE IF EXISTS modifiers;
+      DROP TABLE IF EXISTS order_items;
+      DROP TABLE IF EXISTS items;
+      DROP TABLE IF EXISTS categories;
+      DROP TABLE IF EXISTS tables;
+      DROP TABLE IF EXISTS orders;
+      DROP TABLE IF EXISTS sync_queue;
+    `);
+  }
+
   db.exec(`
     -- 1. Tables map
     CREATE TABLE IF NOT EXISTS tables (
@@ -48,6 +72,7 @@ function initSchema() {
     -- 3. Menu Items
     CREATE TABLE IF NOT EXISTS items (
       id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
       price REAL NOT NULL,
@@ -138,20 +163,20 @@ function seedMockData() {
   if (categoryCount.count === 0) {
     console.log('Seeding mock categories and menu items...');
     const insertCategory = db.prepare('INSERT INTO categories (id, name, description, is_active) VALUES (?, ?, ?, ?)');
-    const insertItem = db.prepare('INSERT INTO items (id, name, description, price, category_id, is_available, tax_rate) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const insertItem = db.prepare('INSERT INTO items (id, code, name, description, price, category_id, is_available, tax_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     
     db.transaction(() => {
       insertCategory.run('c1', 'Appetizers', 'Starters and quick bites', 1);
       insertCategory.run('c2', 'Main Course', 'Filling entrees', 1);
       insertCategory.run('c3', 'Beverages', 'Refreshing beverages', 1);
 
-      insertItem.run('i1', 'Garlic Bread', 'Garlic butter toasted baguette slices', 120.0, 'c1', 1, 0.05);
-      insertItem.run('i2', 'Stuffed Mushrooms', 'Stuffed with cheese and herbs', 160.0, 'c1', 1, 0.05);
-      insertItem.run('i3', 'Paneer Butter Masala', 'Paneer cubes in creamy tomato butter sauce', 280.0, 'c2', 1, 0.05);
-      insertItem.run('i4', 'Chicken Tikka Masala', 'Grilled chicken chunks in spiced tikka gravy', 340.0, 'c2', 1, 0.05);
-      insertItem.run('i5', 'Dal Makhani', 'Slow cooked black lentils with cream', 220.0, 'c2', 1, 0.05);
-      insertItem.run('i6', 'Fresh Lime Soda', 'Salted or sweet lime soda', 70.0, 'c3', 1, 0.05);
-      insertItem.run('i7', 'Cold Brew Coffee', 'Slow dripped smooth black coffee', 110.0, 'c3', 1, 0.05);
+      insertItem.run('i1', '101', 'Garlic Bread', 'Garlic butter toasted baguette slices', 120.0, 'c1', 1, 0.05);
+      insertItem.run('i2', '102', 'Stuffed Mushrooms', 'Stuffed with cheese and herbs', 160.0, 'c1', 1, 0.05);
+      insertItem.run('i3', '201', 'Paneer Butter Masala', 'Paneer cubes in creamy tomato butter sauce', 280.0, 'c2', 1, 0.05);
+      insertItem.run('i4', '202', 'Chicken Tikka Masala', 'Grilled chicken chunks in spiced tikka gravy', 340.0, 'c2', 1, 0.05);
+      insertItem.run('i5', '203', 'Dal Makhani', 'Slow cooked black lentils with cream', 220.0, 'c2', 1, 0.05);
+      insertItem.run('i6', '301', 'Fresh Lime Soda', 'Salted or sweet lime soda', 70.0, 'c3', 1, 0.05);
+      insertItem.run('i7', '302', 'Cold Brew Coffee', 'Slow dripped smooth black coffee', 110.0, 'c3', 1, 0.05);
     })();
   }
 }
