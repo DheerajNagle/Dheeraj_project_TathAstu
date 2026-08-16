@@ -16,6 +16,7 @@
     "dev:backend": "npm run start:dev -w apps/backend-api",
     "dev:desktop": "npm run electron:dev -w apps/desktop-pos",
     "dev:portal": "npm run dev -w apps/owner-portal",
+    "dist:win": "npm run electron:build -w apps/desktop-pos",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "npm run db:migrate -w apps/backend-api",
