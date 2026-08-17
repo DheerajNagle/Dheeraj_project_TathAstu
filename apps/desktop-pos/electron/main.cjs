@@ -369,7 +369,7 @@ app.whenReady().then(() => {
   });
 });
 
-const BACKEND_URL = 'http://localhost:3000';
+const BACKEND_URL = 'http://localhost:4000';
 
 function startSyncWorker() {
   // Sync queue worker runs every 12 seconds

@@ -348,6 +348,142 @@
       background: #7c3aed;
       transform: translateY(-1px);
     }
+
+    /* Tab navigation */
+    .tab-navigation {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      padding-bottom: 1rem;
+    }
+
+    .tab-button {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid transparent;
+      padding: 0.6rem 1.2rem;
+      border-radius: 0.75rem;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tab-button:hover {
+      color: #fff;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .tab-button.active {
+      color: #fff;
+      background: rgba(139, 92, 246, 0.15);
+      border-color: var(--neon-purple);
+      box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);
+    }
+
+    .tab-pane {
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    /* License Tab Specific Styles */
+    .license-form-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 1rem;
+      align-items: flex-end;
+      margin-bottom: 2rem;
+      background: rgba(255,255,255,0.01);
+      padding: 1.5rem;
+      border-radius: 1rem;
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .form-group label {
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    .form-group input, .form-group select {
+      background: rgba(0,0,0,0.5);
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 0.75rem 1rem;
+      border-radius: 0.50rem;
+      color: #fff;
+      font-family: inherit;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus, .form-group select:focus {
+      border-color: var(--neon-purple);
+    }
+
+    .btn-action {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      border: none;
+      color: #fff;
+      transition: all 0.2s;
+    }
+
+    .btn-action.toggle-pause {
+      background: rgba(249, 115, 22, 0.15);
+      color: var(--neon-orange);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+    }
+
+    .btn-action.toggle-pause.paused {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--neon-green);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-action.renew {
+      background: rgba(6, 182, 212, 0.15);
+      color: var(--neon-cyan);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+    }
+
+    .btn-action.revoke {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-action:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+
+    .status-badge.paused {
+      background: rgba(249, 115, 22, 0.15);
+      color: var(--neon-orange);
+      border: 1px solid rgba(249, 115, 22, 0.25);
+    }
+
+    .status-badge.expired {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
   </style>
 </head>
 <body>
@@ -367,90 +503,153 @@
     </div>
   </header>
 
-  <!-- Metrics Grid -->
-  <section class="metrics-grid">
-    <div class="metric-card">
-      <div class="metric-label">Total Cloud Revenue</div>
-      <div class="metric-value value-highlight" id="lbl-revenue">₹0.00</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-label">Orders Logged</div>
-      <div class="metric-value" id="lbl-orders">0</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-label">Average Order Value (AOV)</div>
-      <div class="metric-value value-orange" id="lbl-aov">₹0.00</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-label">Connected Outlets</div>
-      <div class="metric-value" id="lbl-outlets">0</div>
-    </div>
-  </section>
+  <!-- Tab Navigation -->
+  <div class="tab-navigation">
+    <button class="tab-button active" onclick="switchTab('analytics')">Analytics Dashboard</button>
+    <button class="tab-button" onclick="switchTab('licenses')">Licenses & Subscriptions</button>
+  </div>
 
-  <!-- Charts Layout -->
-  <section class="charts-grid">
-    <!-- Multi-Outlet comparison -->
-    <div class="panel-card">
+  <!-- Tab Analytics Pane -->
+  <div id="tab-analytics" class="tab-pane active">
+    <!-- Metrics Grid -->
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Total Cloud Revenue</div>
+        <div class="metric-value value-highlight" id="lbl-revenue">₹0.00</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Orders Logged</div>
+        <div class="metric-value" id="lbl-orders">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Average Order Value (AOV)</div>
+        <div class="metric-value value-orange" id="lbl-aov">₹0.00</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Connected Outlets</div>
+        <div class="metric-value" id="lbl-outlets">0</div>
+      </div>
+    </section>
+
+    <!-- Charts Layout -->
+    <section class="charts-grid">
+      <!-- Multi-Outlet comparison -->
+      <div class="panel-card">
+        <div class="panel-header">
+          <span class="panel-title">Multi-Outlet Performance</span>
+        </div>
+        <div class="bar-chart-container" id="chart-outlets">
+          <div style="color: var(--text-muted); text-align: center; font-size: 0.85rem;">No outlet transactions recorded yet.</div>
+        </div>
+      </div>
+
+      <!-- Revenue by Payment Channel and Top Items -->
+      <div class="panel-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <div class="panel-header" style="margin-bottom: 0.75rem;">
+            <span class="panel-title">Payment Channel Revenue Splits</span>
+          </div>
+          <div class="pie-splits" id="chart-payments">
+            <!-- Populated by script -->
+          </div>
+        </div>
+
+        <div style="margin-top: 1.5rem;">
+          <div class="panel-header" style="margin-bottom: 0.75rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem;">
+            <span class="panel-title">Top 3 Selling Menu Items</span>
+          </div>
+          <div class="bar-chart-container" id="chart-topitems" style="height: auto; gap: 0.75rem;">
+            <!-- Populated by script -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Real-time telemetry feed -->
+    <section class="telemetry-panel">
       <div class="panel-header">
-        <span class="panel-title">Multi-Outlet Performance</span>
+        <span class="panel-title">Live Transaction Telemetry Feed</span>
+        <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">Updates in real time via Socket.io</span>
       </div>
-      <div class="bar-chart-container" id="chart-outlets">
-        <div style="color: var(--text-muted); text-align: center; font-size: 0.85rem;">No outlet transactions recorded yet.</div>
+      <div style="overflow-x: auto;">
+        <table class="telemetry-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Order Number</th>
+              <th>Outlet ID</th>
+              <th>Billing Subtotal</th>
+              <th>Tax (5% GST)</th>
+              <th>Net Total</th>
+              <th>Payment Method</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="telemetry-tbody">
+            <tr>
+              <td colSpan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                Waiting for incoming transactions...
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
+    </section>
+  </div>
+
+  <!-- Tab Licenses Pane -->
+  <div id="tab-licenses" class="tab-pane">
+    <div class="panel-card" style="min-height: auto; margin-bottom: 2rem;">
+      <div class="panel-header">
+        <span class="panel-title">Generate New Workstation License Key</span>
+      </div>
+      <form id="license-generation-form" class="license-form-grid" onsubmit="generateLicenseKey(event)">
+        <div class="form-group">
+          <label for="input-restaurant-name">Restaurant / Outlet Name</label>
+          <input type="text" id="input-restaurant-name" required placeholder="e.g. TathAstu Premium Cafe, Outlet 02">
+        </div>
+        <div class="form-group">
+          <label for="select-duration">Subscription Plan</label>
+          <select id="select-duration" required>
+            <option value="30">1 Month (30 Days)</option>
+            <option value="365">1 Year (365 Days)</option>
+          </select>
+        </div>
+        <div>
+          <button type="submit" class="btn-refresh" style="width: 100%; height: 42px;">Generate License Key</button>
+        </div>
+      </form>
     </div>
 
-    <!-- Revenue by Payment Channel and Top Items -->
-    <div class="panel-card" style="display: flex; flex-direction: column; justify-content: space-between;">
-      <div>
-        <div class="panel-header" style="margin-bottom: 0.75rem;">
-          <span class="panel-title">Payment Channel Revenue Splits</span>
-        </div>
-        <div class="pie-splits" id="chart-payments">
-          <!-- Populated by script -->
-        </div>
+    <section class="telemetry-panel">
+      <div class="panel-header">
+        <span class="panel-title">Active Restaurant Licenses</span>
+        <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">Control live subscription status and workstation locks</span>
       </div>
-
-      <div style="margin-top: 1.5rem;">
-        <div class="panel-header" style="margin-bottom: 0.75rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem;">
-          <span class="panel-title">Top 3 Selling Menu Items</span>
-        </div>
-        <div class="bar-chart-container" id="chart-topitems" style="height: auto; gap: 0.75rem;">
-          <!-- Populated by script -->
-        </div>
+      <div style="overflow-x: auto;">
+        <table class="telemetry-table">
+          <thead>
+            <tr>
+              <th>Restaurant Name</th>
+              <th>License Key</th>
+              <th>Hardware Bind ID</th>
+              <th>Plan Duration</th>
+              <th>Expiration Date</th>
+              <th>Status</th>
+              <th style="text-align: right;">Subscription Actions</th>
+            </tr>
+          </thead>
+          <tbody id="licenses-tbody">
+            <tr>
+              <td colSpan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                No active workstation licenses found.
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-    </div>
-  </section>
-
-  <!-- Real-time telemetry feed -->
-  <section class="telemetry-panel">
-    <div class="panel-header">
-      <span class="panel-title">Live Transaction Telemetry Feed</span>
-      <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: bold;">Updates in real time via Socket.io</span>
-    </div>
-    <div style="overflow-x: auto;">
-      <table class="telemetry-table">
-        <thead>
-          <tr>
-            <th>Timestamp</th>
-            <th>Order Number</th>
-            <th>Outlet ID</th>
-            <th>Billing Subtotal</th>
-            <th>Tax (5% GST)</th>
-            <th>Net Total</th>
-            <th>Payment Method</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="telemetry-tbody">
-          <tr>
-            <td colSpan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-              Waiting for incoming transactions...
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
+    </section>
+  </div>
 
   <script>
     // Load central REST API metrics
@@ -627,6 +826,165 @@
 
       // Flash values and reload metrics
       loadMetrics();
+    }
+
+    // Tab switching controls
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.querySelectorAll('.tab-pane').forEach(pane => {
+        pane.classList.remove('active');
+      });
+
+      if (tabId === 'analytics') {
+        document.querySelector('button[onclick*="analytics"]').classList.add('active');
+        document.getElementById('tab-analytics').classList.add('active');
+        loadMetrics();
+        loadOrdersTable();
+      } else if (tabId === 'licenses') {
+        document.querySelector('button[onclick*="licenses"]').classList.add('active');
+        document.getElementById('tab-licenses').classList.add('active');
+        loadLicenses();
+      }
+    }
+
+    async function loadLicenses() {
+      try {
+        const response = await fetch('/api/admin/licenses');
+        const licenses = await response.json();
+        const tbody = document.getElementById('licenses-tbody');
+
+        if (licenses.length === 0) {
+          tbody.innerHTML = '<tr><td colSpan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">No active workstation licenses found.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = licenses.map(l => {
+          const expStr = l.expiresAt ? new Date(l.expiresAt).toLocaleDateString() : 'Pending Activation';
+          const planText = l.durationDays === 365 ? '1 Year' : `${l.durationDays} Days`;
+          
+          let statusBadge = '';
+          if (!l.isActive) {
+            statusBadge = '<span class="status-badge paused">PAUSED / SUSPENDED</span>';
+          } else if (l.expiresAt && new Date(l.expiresAt).getTime() < Date.now()) {
+            statusBadge = '<span class="status-badge expired">EXPIRED</span>';
+          } else {
+            statusBadge = '<span class="status-badge">ACTIVE</span>';
+          }
+
+          const toggleText = l.isActive ? 'Pause' : 'Resume';
+
+          return `
+            <tr>
+              <td style="color: #fff; font-weight: 800;">${escapeHtml(l.restaurant)}</td>
+              <td style="color: var(--neon-orange); font-family: monospace; font-weight: 800; font-size: 0.85rem;">${l.key}</td>
+              <td style="color: var(--text-muted); font-size: 0.75rem; font-family: monospace;">${l.hardwareId || 'Unbound'}</td>
+              <td>${planText}</td>
+              <td>${expStr}</td>
+              <td>${statusBadge}</td>
+              <td style="text-align: right; display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button class="btn-action toggle-pause ${!l.isActive ? 'paused' : ''}" onclick="toggleLicense('${l.id}')">${toggleText}</button>
+                <button class="btn-action renew" onclick="promptRenewLicense('${l.id}')">Renew</button>
+                <button class="btn-action revoke" onclick="revokeLicense('${l.id}')">Revoke</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Error loading licenses:', err);
+      }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    async function generateLicenseKey(e) {
+      e.preventDefault();
+      const restaurant = document.getElementById('input-restaurant-name').value;
+      const durationDays = document.getElementById('select-duration').value;
+
+      try {
+        const response = await fetch('/api/admin/licenses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ restaurant, durationDays })
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert(`License Key generated successfully:\n\n${data.license.key}\n\nShare this key with the restaurant to activate their installation.`);
+          document.getElementById('license-generation-form').reset();
+          loadLicenses();
+        } else {
+          alert('Failed to generate license key: ' + data.msg);
+        }
+      } catch (err) {
+        alert('Server connection error.');
+      }
+    }
+
+    async function toggleLicense(id) {
+      try {
+        const response = await fetch(`/api/admin/licenses/${id}/toggle`, {
+          method: 'POST'
+        });
+        const data = await response.json();
+        if (data.success) {
+          loadLicenses();
+        } else {
+          alert('Failed to toggle license: ' + data.msg);
+        }
+      } catch (err) {
+        alert('Server error.');
+      }
+    }
+
+    async function promptRenewLicense(id) {
+      const plan = prompt("Enter duration for renewal in days (e.g. 30 for 1 month, 365 for 1 year):", "30");
+      if (plan === null) return;
+      const days = parseInt(plan);
+      if (isNaN(days) || days <= 0) {
+        alert('Invalid days duration.');
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/admin/licenses/${id}/renew`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ durationDays: days })
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert('License subscription renewed successfully!');
+          loadLicenses();
+        } else {
+          alert('Failed to renew license: ' + data.msg);
+        }
+      } catch (err) {
+        alert('Server error.');
+      }
+    }
+
+    async function revokeLicense(id) {
+      if (!confirm('Are you absolutely sure you want to revoke and delete this license? The POS workstation will be locked immediately.')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/admin/licenses/${id}`, {
+          method: 'DELETE'
+        });
+        const data = await response.json();
+        if (data.success) {
+          loadLicenses();
+        } else {
+          alert('Failed to revoke license: ' + data.msg);
+        }
+      } catch (err) {
+        alert('Server error.');
+      }
     }
 
     // Initialize scripts
