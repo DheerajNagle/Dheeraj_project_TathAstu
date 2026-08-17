@@ -407,12 +407,15 @@ async function runUpstreamSync() {
 
 async function runDownstreamSync() {
   try {
-    const res = await fetch(`${BACKEND_URL}/sync/pull`);
+    const res = await fetch(`${BACKEND_URL}/sync/pull?outletId=OUT01`);
     if (res.ok) {
       const data = await res.json();
       if (data.success) {
         db.mergeCatalog(data.categories || [], data.menuItems || []);
-        console.log('[Sync Worker] Downstream catalog synced from cloud PostgreSQL.');
+        if (Array.isArray(data.orders)) {
+          db.mergeOrders(data.orders);
+        }
+        console.log('[Sync Worker] Downstream catalog & orders synced from cloud PostgreSQL.');
       }
     }
   } catch (e) {

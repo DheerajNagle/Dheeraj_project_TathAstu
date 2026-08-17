@@ -291,6 +291,11 @@ function App() {
     checkLicenseLock();
     refreshData();
 
+    // Check license status every 20 seconds for real-time remote deactivation/suspension
+    const licenseInterval = setInterval(() => {
+      checkLicenseLock();
+    }, 20000);
+
     const api = window.electronAPI;
     if (api && api.onUpdaterAvailable) {
       api.onUpdaterAvailable((info: any) => {
@@ -304,6 +309,10 @@ function App() {
         setUpdateDownloaded(true);
       });
     }
+
+    return () => {
+      clearInterval(licenseInterval);
+    };
   }, []);
 
   const handleActivateLicense = async (e: React.FormEvent) => {
@@ -330,7 +339,7 @@ function App() {
 
   // Connect to Socket.io for KDS and live connection status updates
   useEffect(() => {
-    const socket = io('http://localhost:3000', {
+    const socket = io('http://localhost:4000', {
       transports: ['websocket', 'polling']
     });
 
@@ -354,6 +363,11 @@ function App() {
         if (prev.some(t => t.id === ticket.id)) return prev;
         return [...prev, ticket];
       });
+    });
+
+    socket.on('order:updated', (payload: any) => {
+      console.log('[KDS Socket] Received live order update:', payload);
+      refreshData();
     });
 
     return () => {

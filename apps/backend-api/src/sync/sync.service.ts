@@ -156,21 +156,44 @@ export class SyncService implements OnModuleInit {
     return succeededIds;
   }
 
-  async pullCatalog() {
+  async pullCatalog(outletId?: string) {
     try {
       const categories = await this.prisma.category.findMany();
       const menuItems = await this.prisma.menuItem.findMany();
+      
+      let orders = [];
+      if (outletId) {
+        orders = await this.prisma.order.findMany({
+          where: {
+            id: {
+              startsWith: outletId
+            }
+          },
+          include: {
+            items: true
+          }
+        });
+      } else {
+        orders = await this.prisma.order.findMany({
+          include: {
+            items: true
+          }
+        });
+      }
+
       return {
         success: true,
         categories,
-        menuItems
+        menuItems,
+        orders
       };
     } catch (e) {
       console.error('[Sync Engine] Failed to pull catalog from PostgreSQL:', e.message);
       return {
         success: false,
         categories: [],
-        menuItems: []
+        menuItems: [],
+        orders: []
       };
     }
   }

@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query } from '@nestjs/common';
 import { SyncService } from './sync.service.js';
 
 @Controller('sync')
@@ -15,8 +15,8 @@ export class SyncController {
   }
 
   @Get('pull')
-  async pullCatalog() {
-    return this.syncService.pullCatalog();
+  async pullCatalog(@Query('outletId') outletId?: string) {
+    return this.syncService.pullCatalog(outletId);
   }
 
   @Post('webhook/swiggy')

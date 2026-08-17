@@ -576,6 +576,70 @@ function addMenuItem(name, price, categoryId, code) {
   return { success: true, id: itemId };
 }
 
+function mergeOrders(orders) {
+  const insertOrder = db.prepare(`
+    INSERT OR REPLACE INTO orders (
+      id, order_number, table_number, customer_name, customer_phone,
+      status, source, subtotal, tax, discount, total,
+      payment_status, payment_method, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertOrderItem = db.prepare(`
+    INSERT OR REPLACE INTO order_items (
+      id, order_id, menu_item_id, name, price, quantity, notes, kot_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const deleteOrderItems = db.prepare('DELETE FROM order_items WHERE order_id = ?');
+
+  const transaction = db.transaction((orderList) => {
+    for (const o of orderList) {
+      insertOrder.run(
+        o.id,
+        o.orderNumber,
+        o.tableNumber || null,
+        o.customerName || null,
+        o.customerPhone || null,
+        o.status,
+        o.source,
+        o.subTotal,
+        o.tax,
+        o.discount || 0.0,
+        o.total,
+        o.paymentStatus,
+        o.paymentMethod || null,
+        new Date(o.createdAt).toISOString(),
+        new Date(o.updatedAt).toISOString()
+      );
+
+      deleteOrderItems.run(o.id);
+      
+      if (Array.isArray(o.items)) {
+        for (const item of o.items) {
+          insertOrderItem.run(
+            item.id,
+            o.id,
+            item.menuItemId,
+            item.name,
+            item.price,
+            item.quantity,
+            item.notes || null,
+            item.kotId || null
+          );
+        }
+      }
+    }
+  });
+
+  try {
+    transaction(orders);
+    console.log(`[SQLite] Merged ${orders.length} orders from cloud sync.`);
+  } catch (e) {
+    console.error('[SQLite] Failed to merge orders:', e.message);
+  }
+}
+
 module.exports = {
   initSchema,
   getTables,
@@ -586,6 +650,7 @@ module.exports = {
   getSyncQueue,
   clearSyncItem,
   mergeCatalog,
+  mergeOrders,
   getIngredients,
   getActiveShift,
   startShift,
