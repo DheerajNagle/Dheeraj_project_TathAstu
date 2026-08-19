@@ -104,6 +104,9 @@ model License {
   id           String    @id @default(uuid())
   key          String    @unique
   restaurant   String
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
   hardwareId   String?   // Binds to POS device on first activation
   isActive     Boolean   @default(true)
   durationDays Int       @default(30)

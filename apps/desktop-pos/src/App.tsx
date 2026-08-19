@@ -96,7 +96,7 @@ interface ElectronAPI {
   endShift: (shiftId: string, actualDrawerCash: number) => Promise<{ shift: SQLiteShift; reportText: string }>;
   pushPaymentTerminal: (amount: number, orderNumber: string, terminalIp: string) => Promise<{ success: boolean; referenceId: string; msg: string }>;
   checkLicense: () => Promise<{ success: boolean; hardwareId: string; licenseKey?: string; msg?: string }>;
-  activateLicense: (licenseKey: string) => Promise<{ success: boolean; msg: string }>;
+  activateLicense: (payload: { licenseKey: string; contactName: string; contactPhone: string; contactEmail: string }) => Promise<{ success: boolean; msg: string }>;
   onUpdaterAvailable: (callback: (info: any) => void) => void;
   onUpdaterProgress: (callback: (percent: number) => void) => void;
   onUpdaterDownloaded: (callback: (info: any) => void) => void;
@@ -155,6 +155,9 @@ function App() {
   const [licenseKeyInput, setLicenseKeyInput] = useState<string>('');
   const [activationError, setActivationError] = useState<string>('');
   const [isActivating, setIsActivating] = useState<boolean>(false);
+  const [contactNameInput, setContactNameInput] = useState<string>('');
+  const [contactPhoneInput, setContactPhoneInput] = useState<string>('');
+  const [contactEmailInput, setContactEmailInput] = useState<string>('');
 
   // Auto-Updater States
   const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
@@ -318,11 +321,20 @@ function App() {
   const handleActivateLicense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!licenseKeyInput.trim()) return;
+    if (!contactNameInput.trim() || !contactPhoneInput.trim()) {
+      setActivationError('Please fill out all required contact fields.');
+      return;
+    }
     
     setIsActivating(true);
     setActivationError('');
     try {
-      const res = await window.electronAPI.activateLicense(licenseKeyInput.trim());
+      const res = await window.electronAPI.activateLicense({
+        licenseKey: licenseKeyInput.trim(),
+        contactName: contactNameInput.trim(),
+        contactPhone: contactPhoneInput.trim(),
+        contactEmail: contactEmailInput.trim()
+      });
       if (res.success) {
         setIsLicensed(true);
         alert('Software successfully licensed and unlocked!');
@@ -710,7 +722,7 @@ function App() {
             <span className="text-xs font-bold text-orange-400 break-all select-all block mt-0.5">{hwId}</span>
           </div>
 
-          <form onSubmit={handleActivateLicense} className="space-y-4">
+          <form onSubmit={handleActivateLicense} className="space-y-3.5">
             <div className="text-left">
               <label className="text-[10px] font-black text-gray-500 uppercase tracking-wider block">License Activation Key</label>
               <input
@@ -719,7 +731,43 @@ function App() {
                 placeholder="e.g. TATHASTU-PRO-INSTALL-101"
                 value={licenseKeyInput}
                 onChange={e => setLicenseKeyInput(e.target.value)}
-                className="w-full mt-1.5 px-4 py-3 bg-gray-950 border border-gray-800 rounded-xl text-xs font-bold tracking-widest text-center text-white focus:outline-none focus:border-orange-500 uppercase transition-all"
+                className="w-full mt-1 px-3 py-2.5 bg-gray-950 border border-gray-800 rounded-xl text-xs font-bold tracking-widest text-center text-white focus:outline-none focus:border-orange-500 uppercase transition-all"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-left">
+              <div>
+                <label className="text-[9px] font-black text-gray-500 uppercase tracking-wider block">Contact Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="John Doe"
+                  value={contactNameInput}
+                  onChange={e => setContactNameInput(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-orange-500 transition-all"
+                />
+              </div>
+              <div>
+                <label className="text-[9px] font-black text-gray-500 uppercase tracking-wider block">Contact Phone</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="+91 98765 43210"
+                  value={contactPhoneInput}
+                  onChange={e => setContactPhoneInput(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-orange-500 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="text-left">
+              <label className="text-[9px] font-black text-gray-500 uppercase tracking-wider block">Contact Email (Optional)</label>
+              <input
+                type="email"
+                placeholder="john@example.com"
+                value={contactEmailInput}
+                onChange={e => setContactEmailInput(e.target.value)}
+                className="w-full mt-1 px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-orange-500 transition-all"
               />
             </div>
 

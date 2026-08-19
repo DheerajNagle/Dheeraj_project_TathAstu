@@ -210,13 +210,15 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('license:activate', async (event, licenseKey) => {
+  ipcMain.handle('license:activate', async (event, arg) => {
+    const payload = typeof arg === 'string' ? { licenseKey: arg } : arg;
+    const { licenseKey, contactName, contactPhone, contactEmail } = payload;
     const hwId = getHardwareId();
     try {
       const response = await fetch(`${BACKEND_URL}/api/license/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey, hardwareId: hwId }),
+        body: JSON.stringify({ licenseKey, hardwareId: hwId, contactName, contactPhone, contactEmail }),
         signal: AbortSignal.timeout(6000)
       });
       const data = await response.json();

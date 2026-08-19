@@ -18,8 +18,16 @@ export class AppController {
   }
 
   @Post('api/license/activate')
-  async activateLicense(@Body() body: { licenseKey: string; hardwareId: string }) {
-    const { licenseKey, hardwareId } = body;
+  async activateLicense(
+    @Body() body: { 
+      licenseKey: string; 
+      hardwareId: string;
+      contactName?: string;
+      contactPhone?: string;
+      contactEmail?: string;
+    }
+  ) {
+    const { licenseKey, hardwareId, contactName, contactPhone, contactEmail } = body;
     if (!licenseKey || !hardwareId) {
       return { success: false, msg: 'Missing License Key or Hardware ID parameters.' };
     }
@@ -75,11 +83,26 @@ export class AppController {
         data: {
           hardwareId,
           activatedAt,
-          expiresAt
+          expiresAt,
+          contactName,
+          contactPhone,
+          contactEmail
         }
       });
-    } else if (new Date(expiresAt).getTime() < Date.now()) {
-      return { success: false, msg: 'This workstation license has expired.' };
+    } else {
+      if (contactName || contactPhone || contactEmail) {
+        await this.prisma.license.update({
+          where: { id: license.id },
+          data: {
+            contactName: contactName || license.contactName,
+            contactPhone: contactPhone || license.contactPhone,
+            contactEmail: contactEmail || license.contactEmail
+          }
+        });
+      }
+      if (new Date(expiresAt).getTime() < Date.now()) {
+        return { success: false, msg: 'This workstation license has expired.' };
+      }
     }
 
     const payload = {

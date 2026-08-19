@@ -161,7 +161,7 @@ export class SyncService implements OnModuleInit {
       const categories = await this.prisma.category.findMany();
       const menuItems = await this.prisma.menuItem.findMany();
       
-      let orders = [];
+      let orders: any[] = [];
       if (outletId) {
         orders = await this.prisma.order.findMany({
           where: {

@@ -883,10 +883,15 @@
               <td>${planText}</td>
               <td>${expStr}</td>
               <td>${statusBadge}</td>
-              <td style="text-align: right; display: flex; gap: 0.5rem; justify-content: flex-end;">
-                <button class="btn-action toggle-pause ${!l.isActive ? 'paused' : ''}" onclick="toggleLicense('${l.id}')">${toggleText}</button>
-                <button class="btn-action renew" onclick="promptRenewLicense('${l.id}')">Renew</button>
-                <button class="btn-action revoke" onclick="revokeLicense('${l.id}')">Revoke</button>
+              <td style="text-align: right; vertical-align: middle;">
+                <div style="font-size: 0.75rem; color: var(--text-muted); text-align: right; margin-bottom: 0.5rem; line-height: 1.4; border-bottom: 1px dashed rgba(255,255,255,0.05); padding-bottom: 0.4rem; display: inline-block;">
+                  <strong style="color: #fff;">Contact Info:</strong> ${escapeHtml(l.contactName || 'N/A')} (${escapeHtml(l.contactPhone || 'N/A')}) ${l.contactEmail ? `| ${escapeHtml(l.contactEmail)}` : ''}
+                </div>
+                <div style="display: flex; gap: 0.5rem; justify-content: flex-end; align-items: center;">
+                  <button class="btn-action toggle-pause ${!l.isActive ? 'paused' : ''}" onclick="toggleLicense('${l.id}')">${toggleText}</button>
+                  <button class="btn-action renew" onclick="promptRenewLicense('${l.id}')">Renew</button>
+                  <button class="btn-action revoke" onclick="revokeLicense('${l.id}')">Revoke</button>
+                </div>
               </td>
             </tr>
           `;
@@ -897,6 +902,7 @@
     }
 
     function escapeHtml(str) {
+      if (!str) return '';
       return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
